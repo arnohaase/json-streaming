@@ -10,7 +10,7 @@
 //!
 //! Here's a simple example of how to use the library, with explanations following the code:
 //! ```
-//! use json_api::sync::*;
+//! use json_api::blocking::*;
 //!
 //! fn write_something() -> std::io::Result<()> {
 //!     let mut writer = JsonWriter::new_pretty(std::io::stdout());
@@ -49,7 +49,7 @@ pub(crate) mod object;
 pub(crate) mod array;
 pub mod read;
 //TODO feature flag for no-std - define bridge to std::io::Write only in its absence
-//TODO feature flag for async / sync support
+//TODO feature flag for async / blocking support
 //TODO object-per-line
 
 #[allow(unused_imports)]

@@ -1,6 +1,6 @@
-use crate::sync::json_writer::JsonWriter;
-use crate::sync::object::JsonObject;
-use crate::sync::JsonFormatter;
+use crate::blocking::json_writer::JsonWriter;
+use crate::blocking::object::JsonObject;
+use crate::blocking::JsonFormatter;
 use std::io;
 use std::io::Write;
 
@@ -150,7 +150,7 @@ impl <'a, W: Write, F: JsonFormatter> Drop for JsonArray<'a, W, F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sync::CompactFormatter;
+    use crate::blocking::CompactFormatter;
     use rstest::*;
 
     type AS<'a> = JsonArray<'a, Vec<u8>, CompactFormatter>;
