@@ -1,12 +1,11 @@
-use std::io;
-use std::io::Write;
+use crate::blocking::io::BlockingWrite;
 
 /// [JsonWriter] is the starting point for serializing JSON with this library. It is a thin wrapper
 ///  around a [Write], adding some JSON specifics and also formatting.
 /// 
 /// Application code should usually not have to interact with [JsonWriter] directly, but through
 ///  [ObjectSer] or [ArraySer] wrapped around it.
-pub struct JsonWriter <W: Write, F: JsonFormatter> {
+pub struct JsonWriter <W: BlockingWrite, F: JsonFormatter> {
     inner: W,
     formatter: F,
     /// ending an object / array through RAII can cause an IO error that can not be propagated
@@ -15,10 +14,10 @@ pub struct JsonWriter <W: Write, F: JsonFormatter> {
     ///
     /// For this to work reliably, it is necessary to call [JsonWriter::flush()] or
     ///  [JsonWriter::into_inner()] before it goes out of scope, in analogy to `BufWriter`'s API.
-    unreported_error: Option<io::Error>,
+    unreported_error: Option<W::Error>,
 }
 
-impl <W: Write, F: JsonFormatter> JsonWriter<W, F> {
+impl <W: BlockingWrite, F: JsonFormatter> JsonWriter<W, F> {
     /// Create a new [JsonWriter] instance for given [Write] instance and an explicitly provided
     ///  [JsonFormatter]. It gives full flexibility; for most cases, `new_compact()` and 
     ///  `new_pretty()` functions are more convenient. 
@@ -31,13 +30,13 @@ impl <W: Write, F: JsonFormatter> JsonWriter<W, F> {
     }
 
     /// Internal API for writing raw bytes to the underlying [Write].
-    pub fn write_bytes(&mut self, data: &[u8]) -> io::Result<()> {
+    pub fn write_bytes(&mut self, data: &[u8]) -> Result<(), W::Error> {
         self.flush()?;
         self.inner.write_all(data)
     }
 
     /// Internal API for writing a string as an escaped JSON string.
-    pub fn write_escaped_string(&mut self, s: &str) -> io::Result<()> {
+    pub fn write_escaped_string(&mut self, s: &str) -> Result<(), W::Error> {
         self.write_bytes(b"\"")?;
         for b in s.bytes() {
             match b {
@@ -68,7 +67,7 @@ impl <W: Write, F: JsonFormatter> JsonWriter<W, F> {
     }
 
     /// Internal API for writing a `bool`.
-    pub fn write_bool(&mut self, value: bool) -> io::Result<()> {
+    pub fn write_bool(&mut self, value: bool) -> Result<(), W::Error> {
         if value {
             self.write_bytes(b"true")
         }
@@ -78,7 +77,7 @@ impl <W: Write, F: JsonFormatter> JsonWriter<W, F> {
     }
 
     /// Internal API for writing a floating point number, representing non-finite numbers as `null`. 
-    pub fn write_f64(&mut self, value: f64) -> io::Result<()> {
+    pub fn write_f64(&mut self, value: f64) -> Result<(), W::Error> {
         //TODO exponential formatting?
         if value.is_finite() {
             self.write_bytes(format!("{}", value).as_bytes())
@@ -89,7 +88,7 @@ impl <W: Write, F: JsonFormatter> JsonWriter<W, F> {
     }
 
     /// Internal API for writing a floating point number, representing non-finite numbers as `null`. 
-    pub fn write_f32(&mut self, value: f32) -> io::Result<()> {
+    pub fn write_f32(&mut self, value: f32) -> Result<(), W::Error> {
         //TODO exponential formatting?
         if value.is_finite() {
             self.write_bytes(format!("{}", value).as_bytes())
@@ -100,31 +99,31 @@ impl <W: Write, F: JsonFormatter> JsonWriter<W, F> {
     }
 
     /// Internal API for interacting with the formatter
-    pub fn write_format_after_key(&mut self) -> io::Result<()> {
+    pub fn write_format_after_key(&mut self) -> Result<(), W::Error> {
         self.flush()?;
         self.formatter.after_key(&mut self.inner)
     }
 
     /// Internal API for interacting with the formatter
-    pub fn write_format_after_start_nested(&mut self) -> io::Result<()> {
+    pub fn write_format_after_start_nested(&mut self) -> Result<(), W::Error> {
         self.flush()?;
         self.formatter.after_start_nested(&mut self.inner)
     }
 
     /// Internal API for interacting with the formatter
-    pub fn write_format_after_element(&mut self) -> io::Result<()> {
+    pub fn write_format_after_element(&mut self) -> Result<(), W::Error> {
         self.flush()?;
         self.formatter.after_element(&mut self.inner)
     }
 
     /// Internal API for interacting with the formatter
-    pub fn write_format_before_end_nested(&mut self, is_empty: bool) -> io::Result<()> {
+    pub fn write_format_before_end_nested(&mut self, is_empty: bool) -> Result<(), W::Error> {
         self.flush()?;
         self.formatter.before_end_nested(is_empty, &mut self.inner)
     }
 
     /// Internal API for interacting with the formatter
-    pub fn write_format_indent(&mut self) -> io::Result<()> {
+    pub fn write_format_indent(&mut self) -> Result<(), W::Error> {
         self.flush()?;
         self.formatter.indent(&mut self.inner)
     }
@@ -132,7 +131,7 @@ impl <W: Write, F: JsonFormatter> JsonWriter<W, F> {
     /// Check and return any unreported error that occurred when an object / array went out of 
     ///  scope. Applications should call this function when serialization is complete to ensure
     ///  that no errors get lost.    
-    pub fn flush(&mut self) -> io::Result<()> {
+    pub fn flush(&mut self) -> Result<(), W::Error> {
         if let Some(e) = self.unreported_error.take() {
             return Err(e);
         }
@@ -141,24 +140,24 @@ impl <W: Write, F: JsonFormatter> JsonWriter<W, F> {
 
     /// End this [JsonWriter]'s lifetime, returning the [Write] instance it owned. This function
     ///  returns any unreported errors.
-    pub fn into_inner(mut self) -> io::Result<W> {
+    pub fn into_inner(mut self) -> Result<W, W::Error> {
         self.flush()?;
         Ok(self.inner)
     }
 
-    pub(crate) fn set_unreported_error(&mut self, unreported_error: io::Error) {
+    pub(crate) fn set_unreported_error(&mut self, unreported_error: W::Error) {
         self.unreported_error = Some(unreported_error);
     }
 }
 
-impl <W: Write> JsonWriter<W, CompactFormatter> {
+impl <W: BlockingWrite> JsonWriter<W, CompactFormatter> {
     /// Create a [JsonWriter] that generates pretty-printed JSON output.
     pub fn new_compact(inner: W) -> JsonWriter<W, CompactFormatter> {
         JsonWriter::new(inner, CompactFormatter)
     }
 }
 
-impl <W: Write> JsonWriter<W, PrettyFormatter> {
+impl <W: BlockingWrite> JsonWriter<W, PrettyFormatter> {
     /// Create a [JsonWriter] that generates compact JSON output, i.e. with a minimum of whitespace.
     pub fn new_pretty(inner: W) -> JsonWriter<W, PrettyFormatter> {
         JsonWriter::new(inner, PrettyFormatter::new())
@@ -169,25 +168,25 @@ impl <W: Write> JsonWriter<W, PrettyFormatter> {
 ///  affect the JSON's semantics, but only its looks and size.
 pub trait JsonFormatter {
     /// optional whitespace after the ':' of a JSON object's key.
-    fn after_key<W: Write>(&self, w: &mut W) -> io::Result<()>;
+    fn after_key<W: BlockingWrite>(&self, w: &mut W) -> Result<(), W::Error>;
     /// optional newline after the start of an object or array; adds a level of nesting
-    fn after_start_nested<W: Write>(&mut self, w: &mut W) -> io::Result<()>;
+    fn after_start_nested<W: BlockingWrite>(&mut self, w: &mut W) -> Result<(), W::Error>;
     /// optional newline after an element
-    fn after_element<W: Write>(&self, w: &mut W) -> io::Result<()>;
+    fn after_element<W: BlockingWrite>(&self, w: &mut W) -> Result<(), W::Error>;
     /// optional indent before then ending character of a nested object or array; removes a level of nesting
-    fn before_end_nested<W: Write>(&mut self, is_empty: bool, w: &mut W) -> io::Result<()>;
+    fn before_end_nested<W: BlockingWrite>(&mut self, is_empty: bool, w: &mut W) -> Result<(), W::Error>;
     /// indentation, if any
-    fn indent<W: Write>(&self, w: &mut W) -> io::Result<()>;
+    fn indent<W: BlockingWrite>(&self, w: &mut W) -> Result<(), W::Error>;
 }
 
 /// Write a minimum of whitespace, minimizing output size
 pub struct CompactFormatter;
 impl JsonFormatter for CompactFormatter {
-    fn after_key<W: Write>(&self, _w: &mut W) -> io::Result<()> { Ok(())}
-    fn after_start_nested<W: Write>(&mut self, _w: &mut W) -> io::Result<()> { Ok(()) }
-    fn after_element<W: Write>(&self, _w: &mut W) -> io::Result<()> { Ok(()) }
-    fn before_end_nested<W: Write>(&mut self, _is_empty: bool, _w: &mut W) -> io::Result<()> { Ok(()) }
-    fn indent<W: Write>(&self, _w: &mut W) -> io::Result<()> { Ok(()) }
+    fn after_key<W: BlockingWrite>(&self, _w: &mut W) -> Result<(), W::Error> { Ok(())}
+    fn after_start_nested<W: BlockingWrite>(&mut self, _w: &mut W) -> Result<(), W::Error> { Ok(()) }
+    fn after_element<W: BlockingWrite>(&self, _w: &mut W) -> Result<(), W::Error> { Ok(()) }
+    fn before_end_nested<W: BlockingWrite>(&mut self, _is_empty: bool, _w: &mut W) -> Result<(), W::Error> { Ok(()) }
+    fn indent<W: BlockingWrite>(&self, _w: &mut W) -> Result<(), W::Error> { Ok(()) }
 }
 
 /// Write some whitespace and indentation to improve human readability
@@ -202,20 +201,20 @@ impl PrettyFormatter {
     }
 }
 impl JsonFormatter for PrettyFormatter {
-    fn after_key<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn after_key<W: BlockingWrite>(&self, w: &mut W) -> Result<(), W::Error> {
         w.write_all(b" ")
     }
 
-    fn after_start_nested<W: Write>(&mut self, _w: &mut W) -> io::Result<()> {
+    fn after_start_nested<W: BlockingWrite>(&mut self, _w: &mut W) -> Result<(), W::Error> {
         self.indent_level += 1;
         Ok(())
     }
 
-    fn after_element<W: Write>(&self, _w: &mut W) -> io::Result<()> {
+    fn after_element<W: BlockingWrite>(&self, _w: &mut W) -> Result<(), W::Error> {
         Ok(())
     }
 
-    fn before_end_nested<W: Write>(&mut self, is_empty: bool, w: &mut W) -> io::Result<()> {
+    fn before_end_nested<W: BlockingWrite>(&mut self, is_empty: bool, w: &mut W) -> Result<(), W::Error> {
         self.indent_level -= 1;
         if !is_empty {
             self.indent(w)?;
@@ -223,7 +222,7 @@ impl JsonFormatter for PrettyFormatter {
         Ok(())
     }
 
-    fn indent<W: Write>(&self, w: &mut W) -> io::Result<()> {
+    fn indent<W: BlockingWrite>(&self, w: &mut W) -> Result<(), W::Error> {
         static INDENT: &'static str = "\n                                                                                                                                                                                                                                                 ";
         w.write_all(&INDENT.as_bytes()[..2*self.indent_level + 1])
     }
@@ -233,6 +232,7 @@ impl JsonFormatter for PrettyFormatter {
 mod tests {
     use super::*;
     use rstest::*;
+    use std::io;
 
     #[test]
     fn test_json_writer() {

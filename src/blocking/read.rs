@@ -1,8 +1,7 @@
 use core::error::Error;
 use core::fmt::{Display, Formatter};
 use core::str::{FromStr, Utf8Error};
-use std::io;
-use std::io::Read;
+use crate::blocking::io::BlockingRead;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum JsonReadEvent<'a> {
@@ -37,7 +36,7 @@ pub struct Location {
     pub column: usize,
 }
 impl Display for Location {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "line {}, column {} (offset {})", self.line, self.column, self.offset)
     }
 }
@@ -64,15 +63,15 @@ impl Location {
 
 
 #[derive(Debug)]
-pub enum JsonParseError {
-    Io(io::Error),
+pub enum JsonParseError<E: Error> {
+    Io(E),
     Utf8(Utf8Error),
     Parse(&'static str, Location),
     UnexpectedEvent(Location), //TODO event kind
     BufferOverflow(Location),
 }
-impl Display for JsonParseError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl <E: Error> Display for JsonParseError<E> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             JsonParseError::Io(err) => write!(f, "I/O error: {}", err),
             JsonParseError::Utf8(err) => write!(f, "Invalid UTF8: {}", err),
@@ -83,20 +82,16 @@ impl Display for JsonParseError {
     }
 }
 
-impl Error for JsonParseError {
+impl <E: Error> Error for JsonParseError<E> {
 }
-impl From<io::Error> for JsonParseError {
-    fn from(value: io::Error) -> Self {
+impl <E: Error> From<E> for JsonParseError<E> {
+    fn from(value: E) -> Self {
         JsonParseError::Io(value)
     }
 }
-impl From<Utf8Error> for JsonParseError {
-    fn from(value: Utf8Error) -> Self {
-        JsonParseError::Utf8(value)
-    }
-}
 
-type ParseResult<T> = Result<T, JsonParseError>;
+
+type ParseResult<E, T> = Result<T, JsonParseError<E>>;
 
 
 /// Simple state tracking to handle those parts of the grammar that require only local context. That
@@ -121,7 +116,7 @@ enum ReaderState {
 //TODO flag for 'require comma after array / object' -> top-level, newline-separated sequence of objects
 
 //TODO documentation: tokenizer, no grammar check --> grammar checking wrapper?
-pub struct ProvidedBufferJsonReader<'a, R: Read, const N:usize = 8192> {
+pub struct ProvidedBufferJsonReader<'a, R: BlockingRead, const N:usize = 8192> {
     buf: &'a mut [u8;N],
     ind_end_buf: usize,
     reader: R,
@@ -129,7 +124,7 @@ pub struct ProvidedBufferJsonReader<'a, R: Read, const N:usize = 8192> {
     parked_next: Option<u8>,
     cur_location: Location,
 }
-impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
+impl<'a, R: BlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
     pub fn new(buf: &'a mut [u8;N], reader: R) -> Self {
         Self {
             buf,
@@ -141,7 +136,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    fn ensure_accept_value(&mut self) -> ParseResult<()> {
+    fn ensure_accept_value(&mut self) -> ParseResult<R::Error,  ()> {
         match self.state {
             ReaderState::Initial |
             ReaderState::BeforeEntry |
@@ -154,7 +149,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    fn ensure_accept_end_nested(&mut self) -> ParseResult<()> {
+    fn ensure_accept_end_nested(&mut self) -> ParseResult<R::Error, ()> {
         match self.state {
             ReaderState::Initial |
             ReaderState::AfterValue => {
@@ -169,7 +164,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    fn state_change_for_value(&mut self) -> ParseResult<()> {
+    fn state_change_for_value(&mut self) -> ParseResult<R::Error,  ()> {
         match self.state {
             ReaderState::Initial |
             ReaderState::BeforeEntry |
@@ -183,7 +178,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    fn on_comma(&mut self) -> ParseResult<()> {
+    fn on_comma(&mut self) -> ParseResult<R::Error,  ()> {
         match self.state {
             ReaderState::AfterValue => {
                 self.state = ReaderState::BeforeEntry;
@@ -197,7 +192,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn next(&mut self) -> ParseResult<JsonReadEvent> {
+    pub fn next(&mut self) -> ParseResult<R::Error,  JsonReadEvent> {
         self.consume_whitespace()?;
 
         match self.read_next_byte()? {
@@ -253,7 +248,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_key(&mut self) -> ParseResult<Option<&str>> {
+    pub fn expect_next_key(&mut self) -> ParseResult<R::Error,  Option<&str>> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -263,7 +258,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_number<T: FromStr>(&mut self) -> ParseResult<T> {
+    pub fn expect_next_number<T: FromStr>(&mut self) -> ParseResult<R::Error,  T> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -277,7 +272,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_opt_number<T: FromStr>(&mut self) -> ParseResult<Option<T>> {
+    pub fn expect_next_opt_number<T: FromStr>(&mut self) -> ParseResult<R::Error,  Option<T>> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -292,7 +287,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_string(&mut self) -> ParseResult<&str> {
+    pub fn expect_next_string(&mut self) -> ParseResult<R::Error,  &str> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -301,7 +296,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_opt_string(&mut self) -> ParseResult<Option<&str>> {
+    pub fn expect_next_opt_string(&mut self) -> ParseResult<R::Error,  Option<&str>> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -311,7 +306,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_bool(&mut self) -> ParseResult<bool> {
+    pub fn expect_next_bool(&mut self) -> ParseResult<R::Error,  bool> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -320,7 +315,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_opt_bool(&mut self) -> ParseResult<Option<bool>> {
+    pub fn expect_next_opt_bool(&mut self) -> ParseResult<R::Error,  Option<bool>> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -330,7 +325,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_start_object(&mut self) -> ParseResult<()> {
+    pub fn expect_next_start_object(&mut self) -> ParseResult<R::Error,  ()> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -339,7 +334,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_opt_start_object(&mut self) -> ParseResult<Option<()>> {
+    pub fn expect_next_opt_start_object(&mut self) -> ParseResult<R::Error,  Option<()>> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -349,7 +344,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_start_array(&mut self) -> ParseResult<()> {
+    pub fn expect_next_start_array(&mut self) -> ParseResult<R::Error,  ()> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -358,7 +353,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    pub fn expect_next_opt_start_array(&mut self) -> ParseResult<Option<()>> {
+    pub fn expect_next_opt_start_array(&mut self) -> ParseResult<R::Error,  Option<()>> {
         let location = self.location();
         let next = self.next()?;
         match next {
@@ -368,7 +363,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    fn consume_whitespace(&mut self) -> ParseResult<()> {
+    fn consume_whitespace(&mut self) -> ParseResult<R::Error,  ()> {
         while let Some(next) = self.read_next_byte()? {
             match next {
                 b' ' | b'\t' | b'\n' | b'\r' => {
@@ -382,25 +377,23 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         Ok(())
     }
 
-    fn read_next_byte(&mut self) -> ParseResult<Option<u8>> {
+    fn read_next_byte(&mut self) -> ParseResult<R::Error,  Option<u8>> {
         // Parsing JSON requires a lookahead of a single byte, which is stored in 'parked_next'
         if let Some(parked) = self.parked_next.take() {
             return Ok(Some(parked));
         }
 
         //TODO BufRead? no_std trait? optimize & clean up!
-        let mut read_buf: [u8;1] = [0];
-        let num_read = self.reader.read(&mut read_buf)?;
-        if num_read == 0 {
-            Ok(None)
+        if let Some(byte) =self.reader.read()? {
+            self.cur_location.after_byte(byte);
+            Ok(Some(byte))
         }
         else {
-            self.cur_location.after_byte(read_buf[0]);
-            Ok(Some(read_buf[0]))
+            Ok(None)
         }
     }
 
-    fn consume_null_literal(&mut self) -> ParseResult<JsonReadEvent> {
+    fn consume_null_literal(&mut self) -> ParseResult<R::Error,  JsonReadEvent> {
         if self.read_next_byte()? != Some(b'u') {
             return self.parse_err("incomplete null literal");
         }
@@ -413,7 +406,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         Ok(JsonReadEvent::NullLiteral)
     }
 
-    fn consume_true_literal(&mut self) -> ParseResult<JsonReadEvent> {
+    fn consume_true_literal(&mut self) -> ParseResult<R::Error,  JsonReadEvent> {
         if self.read_next_byte()? != Some(b'r') {
             return self.parse_err("incomplete true literal");
         }
@@ -426,7 +419,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         Ok(JsonReadEvent::BooleanLiteral(true))
     }
 
-    fn consume_false_literal(&mut self) -> ParseResult<JsonReadEvent> {
+    fn consume_false_literal(&mut self) -> ParseResult<R::Error,  JsonReadEvent> {
         if self.read_next_byte()? != Some(b'a') {
             return self.parse_err("incomplete false literal");
         }
@@ -442,7 +435,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         Ok(JsonReadEvent::BooleanLiteral(false))
     }
 
-    fn append_to_buf(&mut self, ch: u8) -> ParseResult<()> {
+    fn append_to_buf(&mut self, ch: u8) -> ParseResult<R::Error,  ()> {
         if self.ind_end_buf >= N {
             return self.buf_overflow();
         }
@@ -451,7 +444,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         Ok(())
     }
 
-    fn parse_after_quote(&mut self) -> ParseResult<JsonReadEvent> {
+    fn parse_after_quote(&mut self) -> ParseResult<R::Error,  JsonReadEvent> {
         self.ind_end_buf = 0;
 
         loop {
@@ -503,17 +496,23 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
                         return self.parse_err("missing comma");
                     }
                 }
-                Ok(JsonReadEvent::Key(core::str::from_utf8(&self.buf[..self.ind_end_buf])?))
+                Ok(JsonReadEvent::Key(core::str::from_utf8(
+                    &self.buf[..self.ind_end_buf])
+                    .map_err(|e| JsonParseError::Utf8(e))?
+                ))
             },
             other => {
                 self.state_change_for_value()?;
                 self.parked_next = other;
-                Ok(JsonReadEvent::StringLiteral(core::str::from_utf8(&self.buf[..self.ind_end_buf])?))
+                Ok(JsonReadEvent::StringLiteral(core::str::from_utf8(
+                    &self.buf[..self.ind_end_buf])
+                    .map_err(|e| JsonParseError::Utf8(e))?
+                ))
             }
         }
     }
 
-    fn parse_unicode_codepoint(&mut self) -> ParseResult<u16> {
+    fn parse_unicode_codepoint(&mut self) -> ParseResult<R::Error,  u16> {
         // exactly four hex digits specifying a code point
         let mut cp: u16 = 0;
         for _ in 0..4 {
@@ -536,7 +535,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
     }
 
     /// see https://de.wikipedia.org/wiki/UTF-8
-    fn append_code_point(&mut self, cp: u16) -> ParseResult<()> {
+    fn append_code_point(&mut self, cp: u16) -> ParseResult<R::Error,  ()> {
         match cp {
             0x0000..=0x007F => {
                 self.append_to_buf(cp as u8)
@@ -553,7 +552,7 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         }
     }
 
-    fn parse_number_literal(&mut self, b: u8) -> ParseResult<JsonReadEvent> {
+    fn parse_number_literal(&mut self, b: u8) -> ParseResult<R::Error,  JsonReadEvent> {
         self.buf[0] = b;
         self.ind_end_buf = 1;
 
@@ -570,14 +569,17 @@ impl<'a, R: Read, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
                 }
             }
         }
-        Ok(JsonReadEvent::NumberLiteral(JsonNumber(core::str::from_utf8(&self.buf[..self.ind_end_buf])?)))
+        Ok(JsonReadEvent::NumberLiteral(JsonNumber(core::str::from_utf8(
+            &self.buf[..self.ind_end_buf])
+            .map_err(|e| JsonParseError::Utf8(e))?
+        )))
     }
 
-    fn parse_err<T>(&self, msg: &'static str) -> ParseResult<T> {
+    fn parse_err<T>(&self, msg: &'static str) -> ParseResult<R::Error,  T> {
         Err(JsonParseError::Parse(msg, self.cur_location))
     }
 
-    fn buf_overflow<T>(&self) -> ParseResult<T> {
+    fn buf_overflow<T>(&self) -> ParseResult<R::Error,  T> {
         Err(JsonParseError::BufferOverflow(self.cur_location))
     }
 
@@ -593,7 +595,8 @@ mod tests {
     use super::*;
     use rstest::*;
 
-    fn assert_is_similar_error(actual: &JsonParseError, expected: &JsonParseError) {
+    fn assert_is_similar_error(actual: &JsonParseError<std::io::Error>, expected: &JsonParseError<std::io::Error>) {
+
         match actual {
             JsonParseError::Io(self_e) => {
                 if let JsonParseError::Io(other_e) = expected {
@@ -799,7 +802,7 @@ mod tests {
         JsonReadEvent::EndObject,
     ], None)]
 
-    fn test_parse(#[case] input: &str, #[case] expected: Vec<JsonReadEvent>, #[case] expected_error: Option<JsonParseError>) {
+    fn test_parse(#[case] input: &str, #[case] expected: Vec<JsonReadEvent>, #[case] expected_error: Option<JsonParseError<std::io::Error>>) {
         let mut buf = [0u8;64];
         let input_with_whitespace = format!(" \r\n\t{} \r\n\t", input);
 
@@ -927,7 +930,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_number(#[case] json: &str, #[case] expected_num: ParseResult<u8>) {
+    fn test_expect_next_number(#[case] json: &str, #[case] expected_num: ParseResult<std::io::Error, u8>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);
@@ -951,7 +954,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_opt_number(#[case] json: &str, #[case] expected_num: ParseResult<Option<u8>>) {
+    fn test_expect_next_opt_number(#[case] json: &str, #[case] expected_num: ParseResult<std::io::Error, Option<u8>>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);
@@ -974,7 +977,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_string(#[case] json: &str, #[case] expected: ParseResult<&str>) {
+    fn test_expect_next_string(#[case] json: &str, #[case] expected: ParseResult<std::io::Error, &str>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);
@@ -997,7 +1000,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_opt_string(#[case] json: &str, #[case] expected: ParseResult<Option<&str>>) {
+    fn test_expect_next_opt_string(#[case] json: &str, #[case] expected: ParseResult<std::io::Error, Option<&str>>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);
@@ -1020,7 +1023,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_bool(#[case] json: &str, #[case] expected: ParseResult<bool>) {
+    fn test_expect_next_bool(#[case] json: &str, #[case] expected: ParseResult<std::io::Error, bool>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);
@@ -1044,7 +1047,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_opt_bool(#[case] json: &str, #[case] expected: ParseResult<Option<bool>>) {
+    fn test_expect_next_opt_bool(#[case] json: &str, #[case] expected: ParseResult<std::io::Error, Option<bool>>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);
@@ -1067,7 +1070,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_start_object(#[case] json: &str, #[case] expected: ParseResult<()>) {
+    fn test_expect_next_start_object(#[case] json: &str, #[case] expected: ParseResult<std::io::Error, ()>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);
@@ -1090,7 +1093,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_opt_start_object(#[case] json: &str, #[case] expected: ParseResult<Option<()>>) {
+    fn test_expect_next_opt_start_object(#[case] json: &str, #[case] expected: ParseResult<std::io::Error, Option<()>>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);
@@ -1113,7 +1116,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Ok(()))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_start_array(#[case] json: &str, #[case] expected: ParseResult<()>) {
+    fn test_expect_next_start_array(#[case] json: &str, #[case] expected: ParseResult<std::io::Error, ()>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);
@@ -1136,7 +1139,7 @@ mod tests {
     #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
     #[case::start_array("[", Ok(Some(())))]
     #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    fn test_expect_next_opt_start_array(#[case] json: &str, #[case] expected: ParseResult<Option<()>>) {
+    fn test_expect_next_opt_start_array(#[case] json: &str, #[case] expected: ParseResult<std::io::Error, Option<()>>) {
         let mut buf = [0u8;64];
         let r = Cursor::new(json.as_bytes().to_vec());
         let mut parser = ProvidedBufferJsonReader::new(&mut buf, r);

@@ -48,6 +48,7 @@ pub(crate) mod json_writer;
 pub(crate) mod object;
 pub(crate) mod array;
 pub mod read;
+mod io;
 //TODO feature flag for no-std - define bridge to std::io::Write only in its absence
 //TODO feature flag for async / blocking support
 //TODO object-per-line
