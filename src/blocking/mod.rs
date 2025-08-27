@@ -49,7 +49,6 @@ pub(crate) mod object;
 pub(crate) mod array;
 pub mod read;
 mod io;
-//TODO feature flag for no-std - define bridge to std::io::Write only in its absence
 //TODO feature flag for async / blocking support
 //TODO object-per-line
 
@@ -82,7 +81,7 @@ mod tests {
             na.write_null_value()?;
             na.write_bool_value(true)?;
             na.write_bool_value(false)?;
-            na.write_int_value(-23987)?;
+            na.write_i32_value(-23987)?;
             na.write_u128_value(23987u128)?;
             na.write_f64_value(23.235)?;
             na.write_f64_value(f64::INFINITY)?;

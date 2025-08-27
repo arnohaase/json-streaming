@@ -1,3 +1,4 @@
+use core::fmt::Display;
 use crate::blocking::io::BlockingWrite;
 
 /// [JsonWriter] is the starting point for serializing JSON with this library. It is a thin wrapper
@@ -78,28 +79,20 @@ impl <W: BlockingWrite, F: JsonFormatter> JsonWriter<W, F> {
 
     /// Internal API for writing a floating point number, representing non-finite numbers as `null`. 
     pub fn write_f64(&mut self, value: f64) -> Result<(), W::Error> {
-        //TODO exponential formatting?
-        if value.is_finite() {
-            let mut buffer = ryu::Buffer::new();
-            let formatted = buffer.format_finite(value);
-            self.write_bytes(formatted.as_bytes())
-        }
-        else {
-            self.write_bytes(b"null")
-        }
+        FormatWrapper::new(self)
+            .write_f64(value)
     }
 
     /// Internal API for writing a floating point number, representing non-finite numbers as `null`. 
     pub fn write_f32(&mut self, value: f32) -> Result<(), W::Error> {
-        //TODO exponential formatting?
-        if value.is_finite() {
-            let mut buffer = ryu::Buffer::new();
-            let formatted = buffer.format_finite(value);
-            self.write_bytes(formatted.as_bytes())
-        }
-        else {
-            self.write_bytes(b"null")
-        }
+        FormatWrapper::new(self)
+            .write_f32(value)
+    }
+
+    /// internal API for writing raw int values
+    pub fn write_raw_num(&mut self, value: impl Display) -> Result<(), W::Error> {
+        FormatWrapper::new(self)
+            .write_raw(value)
     }
 
     /// Internal API for interacting with the formatter
@@ -232,6 +225,90 @@ impl JsonFormatter for PrettyFormatter {
     }
 }
 
+
+
+struct FormatWrapper<'a, W: BlockingWrite, F: JsonFormatter> {
+    inner: &'a mut JsonWriter<W, F>,
+    cached_error: Option<W::Error>,
+}
+impl<'a, W: BlockingWrite, F: JsonFormatter> FormatWrapper<'a, W, F> {
+    fn new(inner: &'a mut JsonWriter<W, F>) -> Self {
+        Self {
+            inner,
+            cached_error: None,
+        }
+    }
+
+    fn write_raw(&mut self, value: impl core::fmt::Display) -> Result<(), W::Error> {
+        use core::fmt::Write;
+        let _ = write!(self, "{}", value);
+        match self.cached_error.take() {
+            None => Ok(()),
+            Some(e) => Err(e),
+        }
+    }
+
+    fn write_f64(&mut self, value: f64) -> Result<(), W::Error> {
+        use core::fmt::Write;
+
+        const UPPER_BOUND_LIT:f64 = 1e6;
+        const LOWER_BOUND_LIT:f64 = 1e-3;
+
+        if value.is_finite() {
+            let _ = if value.abs() < UPPER_BOUND_LIT && value.abs() >= LOWER_BOUND_LIT {
+                write!(self, "{}", value)
+            }
+            else {
+                write!(self, "{:e}", value)
+            };
+            match self.cached_error.take() {
+                None => Ok(()),
+                Some(e) => Err(e),
+            }
+        }
+        else {
+            self.inner.write_bytes("null".as_bytes())
+        }
+    }
+
+    fn write_f32(&mut self, value: f32) -> Result<(), W::Error> {
+        use core::fmt::Write;
+
+        const UPPER_BOUND_LIT:f32 = 1e6;
+        const LOWER_BOUND_LIT:f32 = 1e-3;
+
+        if value.is_finite() {
+            let _ = if value.abs() < UPPER_BOUND_LIT && value.abs() >= LOWER_BOUND_LIT {
+                write!(self, "{}", value)
+            }
+            else {
+                write!(self, "{:e}", value)
+            };
+            match self.cached_error.take() {
+                None => Ok(()),
+                Some(e) => Err(e),
+            }
+        }
+        else {
+            self.inner.write_bytes("null".as_bytes())
+        }
+    }
+}
+impl<'a, W: BlockingWrite, F: JsonFormatter> core::fmt::Write for FormatWrapper<'a, W, F> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        match self.inner.write_bytes(s.as_bytes()) {
+            Ok(_) => {
+                Ok(())
+            }
+            Err(e) => {
+                self.cached_error = Some(e);
+                Err(core::fmt::Error)
+            }
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,10 +405,18 @@ mod tests {
     }
 
     #[rstest]
-    #[case::simple(2.0, "2.0")]
-    #[case::exp(1.234e10, "12340000000.0")]
+    #[case::simple(2.0, "2")]
+    #[case::exp_5(1.234e5, "123400")]
+    #[case::exp_10(1.234e10, "1.234e10")]
     #[case::exp_20(1.234e20, "1.234e20")]
-    #[case::neg_exp(1.234e-10, "1.234e-10")]
+    #[case::exp_neg_3(1.234e-3, "0.001234")]
+    #[case::exp_neg_10(1.234e-10, "1.234e-10")]
+    #[case::neg_simple(-2.0, "-2")]
+    #[case::neg_exp_5(-1.234e5, "-123400")]
+    #[case::neg_exp_10(-1.234e10, "-1.234e10")]
+    #[case::neg_exp_20(-1.234e20, "-1.234e20")]
+    #[case::neg_exp_neg_3(-1.234e-3, "-0.001234")]
+    #[case::neg_exp_neg_10(-1.234e-10, "-1.234e-10")]
     #[case::inf(f64::INFINITY, "null")]
     #[case::neg_inf(f64::NEG_INFINITY, "null")]
     #[case::nan(f64::NAN, "null")]
@@ -342,10 +427,18 @@ mod tests {
     }
 
     #[rstest]
-    #[case::simple(2.0, "2.0")]
-    #[case::exp(1.234e10, "12340000000.0")]
+    #[case::simple(2.0, "2")]
+    #[case::exp_5(1.234e5, "123400")]
+    #[case::exp_10(1.234e10, "1.234e10")]
     #[case::exp_20(1.234e20, "1.234e20")]
-    #[case::neg_exp(1.234e-10, "1.234e-10")]
+    #[case::exp_neg_3(1.234e-3, "0.001234")]
+    #[case::exp_neg_10(1.234e-10, "1.234e-10")]
+    #[case::neg_simple(-2.0, "-2")]
+    #[case::neg_exp_5(-1.234e5, "-123400")]
+    #[case::neg_exp_10(-1.234e10, "-1.234e10")]
+    #[case::neg_exp_20(-1.234e20, "-1.234e20")]
+    #[case::neg_exp_neg_3(-1.234e-3, "-0.001234")]
+    #[case::neg_exp_neg_10(-1.234e-10, "-1.234e-10")]
     #[case::inf(f32::INFINITY, "null")]
     #[case::neg_inf(f32::NEG_INFINITY, "null")]
     #[case::nan(f32::NAN, "null")]
