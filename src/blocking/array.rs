@@ -1,7 +1,7 @@
 use crate::blocking::io::BlockingWrite;
 use crate::blocking::json_writer::JsonWriter;
 use crate::blocking::object::JsonObject;
-use crate::blocking::JsonFormatter;
+use crate::blocking::{FloatFormat, JsonFormatter};
 
 
 /// An [JsonArray] is the API for writing a JSON array, i.e. a sequence of elements. The 
@@ -14,16 +14,16 @@ use crate::blocking::JsonFormatter;
 ///
 /// A typical use of the library is to create a [JsonWriter] and then wrap it in a top-level 
 ///  [JsonArray] instance.
-pub struct JsonArray<'a, W: BlockingWrite, F: JsonFormatter> {
-    writer: &'a mut JsonWriter<W, F>,
+pub struct JsonArray<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> {
+    writer: &'a mut JsonWriter<W, F, FF>,
     is_initial: bool,
     is_ended: bool,
 }
 
-impl<'a, W: BlockingWrite, F: JsonFormatter> JsonArray<'a, W, F> {
+impl<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, W, F, FF> {
     /// Create a new [JsonArray] instance. Application code can do this explicitly only initially
     ///  as a starting point for writing JSON. Nested arrays are created by the library.
-    pub fn new(writer: &'a mut JsonWriter<W, F>) -> Result<Self, W::Error> {
+    pub fn new(writer: &'a mut JsonWriter<W, F, FF>) -> Result<Self, W::Error> {
         writer.write_bytes(b"[")?;
         writer.write_format_after_start_nested()?;
 
@@ -86,7 +86,7 @@ impl<'a, W: BlockingWrite, F: JsonFormatter> JsonArray<'a, W, F> {
     ///  for writing elements to the nested object. When the returned [JsonObject] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested object is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub fn start_object(&mut self) -> Result<JsonObject<W, F>, W::Error> {
+    pub fn start_object(&mut self) -> Result<JsonObject<W, F, FF>, W::Error> {
         self.handle_initial()?;
         JsonObject::new(self.writer)
     }
@@ -95,7 +95,7 @@ impl<'a, W: BlockingWrite, F: JsonFormatter> JsonArray<'a, W, F> {
     ///  for writing elements to the nested object. When the returned [JsonArray] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested object is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub fn start_array(&mut self) -> Result<JsonArray<W, F>, W::Error> {
+    pub fn start_array(&mut self) -> Result<JsonArray<W, F, FF>, W::Error> {
         self.handle_initial()?;
         JsonArray::new(self.writer)
     }
@@ -116,7 +116,7 @@ impl<'a, W: BlockingWrite, F: JsonFormatter> JsonArray<'a, W, F> {
 
 macro_rules! write_arr_int {
     ($t:ty ; $f:ident) => {
-impl<'a, W: BlockingWrite, F: JsonFormatter> JsonArray<'a, W, F> {
+impl<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, W, F, FF> {
     /// Write an element with a generic int value. This function fits most Rust integral
     ///  types; for the exceptions, there are separate functions.
     pub fn $f(&mut self, value: $t) -> Result<(), W::Error> {
@@ -141,7 +141,7 @@ write_arr_int!(usize; write_usize_value);
 
 
 
-impl <'a, W: BlockingWrite, F: JsonFormatter> Drop for JsonArray<'a, W, F> {
+impl <'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> Drop for JsonArray<'a, W, F, FF> {
     fn drop(&mut self) {
         if !self.is_ended {
             let _ = self._end();
@@ -152,11 +152,11 @@ impl <'a, W: BlockingWrite, F: JsonFormatter> Drop for JsonArray<'a, W, F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blocking::CompactFormatter;
+    use crate::blocking::{new_compact_json_writer, CompactFormatter, DefaultFloatFormat};
     use rstest::*;
     use std::io;
 
-    type AS<'a> = JsonArray<'a, Vec<u8>, CompactFormatter>;
+    type AS<'a> = JsonArray<'a, Vec<u8>, CompactFormatter, DefaultFloatFormat>;
 
     #[rstest]
     #[case::empty(Box::new(|_ser: &mut AS| Ok(())), "[]")]
@@ -174,7 +174,7 @@ mod tests {
     #[case::nested_obj_last(Box::new(|ser: &mut AS| { ser.write_u32_value(2)?; ser.start_object()?.end() }), r#"[2,{}]"#)]
     #[case::two_nested_objects(Box::new(|ser: &mut AS| { ser.start_object()?.end()?; ser.start_object()?.end() }), r#"[{},{}]"#)]
     fn test_array(#[case] code: Box<dyn Fn(&mut AS) -> io::Result<()>>, #[case] expected: &str) -> io::Result<()> {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut writer = new_compact_json_writer(Vec::new());
         {
             let mut array_ser = JsonArray::new(&mut writer)?;
             code(&mut array_ser)?;
@@ -235,7 +235,7 @@ mod tests {
     #[case::f32_nan(Box::new(|w: &mut AS| w.write_f32_value(f32::NAN)), "null")]
     fn test_write_value(#[case] code: Box<dyn Fn(&mut AS) -> io::Result<()>>, #[case] expected: &str) -> io::Result<()> {
         {
-            let mut writer = JsonWriter::new_compact(Vec::new());
+            let mut writer = new_compact_json_writer(Vec::new());
             {
                 let mut array_ser = JsonArray::new(&mut writer)?;
                 code(&mut array_ser)?;
@@ -248,7 +248,7 @@ mod tests {
 
         // test with and without preceding element to verify that 'initial' is handled correctly
         {
-            let mut writer = JsonWriter::new_compact(Vec::new());
+            let mut writer = new_compact_json_writer(Vec::new());
             {
                 let mut array_ser = JsonArray::new(&mut writer)?;
                 array_ser.write_null_value()?;
