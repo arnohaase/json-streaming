@@ -70,6 +70,7 @@ pub use read::*;
 mod tests {
     use super::*;
     use std::io;
+    use crate::format::float_format::DefaultFloatFormat;
 
     fn do_write_json<F: JsonFormatter>(o: &mut JsonObject<Vec<u8>, F, DefaultFloatFormat>) -> io::Result<()> {
         o.write_string_value("abc", "yo")?;

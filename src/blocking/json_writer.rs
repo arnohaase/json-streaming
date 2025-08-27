@@ -1,6 +1,7 @@
 use core::fmt::Display;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 use crate::blocking::io::BlockingWrite;
+use crate::format::float_format::{DefaultFloatFormat, FloatFormat};
 
 /// [JsonWriter] is the starting point for serializing JSON with this library. It is a thin wrapper
 ///  around a [Write], adding some JSON specifics and also formatting.
@@ -223,48 +224,6 @@ impl JsonFormatter for PrettyFormatter {
     fn indent<W: BlockingWrite>(&self, w: &mut W) -> Result<(), W::Error> {
         static INDENT: &'static str = "\n                                                                                                                                                                                                                                                 ";
         w.write_all(&INDENT.as_bytes()[..2*self.indent_level + 1])
-    }
-}
-
-pub trait FloatFormat {
-    fn write_f64(f: &mut impl core::fmt::Write, value: f64) -> core::fmt::Result;
-    fn write_f32(f: &mut impl core::fmt::Write, value: f32) -> core::fmt::Result;
-}
-
-pub struct DefaultFloatFormat;
-impl FloatFormat for DefaultFloatFormat {
-    fn write_f64(f: &mut impl core::fmt::Write, value: f64) -> std::fmt::Result {
-        const UPPER_BOUND_LIT:f64 = 1e6;
-        const LOWER_BOUND_LIT:f64 = 1e-3;
-
-        if value.is_finite() {
-            if value.abs() < UPPER_BOUND_LIT && value.abs() >= LOWER_BOUND_LIT {
-                write!(f, "{}", value)
-            }
-            else {
-                write!(f, "{:e}", value)
-            }
-        }
-        else {
-            write!(f, "null")
-        }
-    }
-
-    fn write_f32(f: &mut impl core::fmt::Write, value: f32) -> std::fmt::Result {
-        const UPPER_BOUND_LIT:f32 = 1e6;
-        const LOWER_BOUND_LIT:f32 = 1e-3;
-
-        if value.is_finite() {
-            if value.abs() < UPPER_BOUND_LIT && value.abs() >= LOWER_BOUND_LIT {
-                write!(f, "{}", value)
-            }
-            else {
-                write!(f, "{:e}", value)
-            }
-        }
-        else {
-            write!(f, "null")
-        }
     }
 }
 
