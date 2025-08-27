@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
+default = ["f64"]
 no-std = []
+f64 = ["dep:ryu"]
 
 [dev-dependencies]
 rstest = "0.26"
 
 [dependencies]
+ryu = { version = "1.0", optional = true, default-features = false }

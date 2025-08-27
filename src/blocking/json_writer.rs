@@ -80,7 +80,9 @@ impl <W: BlockingWrite, F: JsonFormatter> JsonWriter<W, F> {
     pub fn write_f64(&mut self, value: f64) -> Result<(), W::Error> {
         //TODO exponential formatting?
         if value.is_finite() {
-            self.write_bytes(format!("{}", value).as_bytes())
+            let mut buffer = ryu::Buffer::new();
+            let formatted = buffer.format_finite(value);
+            self.write_bytes(formatted.as_bytes())
         }
         else {
             self.write_bytes(b"null")
@@ -91,7 +93,9 @@ impl <W: BlockingWrite, F: JsonFormatter> JsonWriter<W, F> {
     pub fn write_f32(&mut self, value: f32) -> Result<(), W::Error> {
         //TODO exponential formatting?
         if value.is_finite() {
-            self.write_bytes(format!("{}", value).as_bytes())
+            let mut buffer = ryu::Buffer::new();
+            let formatted = buffer.format_finite(value);
+            self.write_bytes(formatted.as_bytes())
         }
         else {
             self.write_bytes(b"null")
@@ -324,10 +328,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case::simple(2.0, "2")]
-    #[case::exp(1.234e10, "12340000000")]
-    #[case::exp_20(1.234e20, "123400000000000000000")]
-    #[case::neg_exp(1.234e-10, "0.0000000001234")]
+    #[case::simple(2.0, "2.0")]
+    #[case::exp(1.234e10, "12340000000.0")]
+    #[case::exp_20(1.234e20, "1.234e20")]
+    #[case::neg_exp(1.234e-10, "1.234e-10")]
     #[case::inf(f64::INFINITY, "null")]
     #[case::neg_inf(f64::NEG_INFINITY, "null")]
     #[case::nan(f64::NAN, "null")]
@@ -338,10 +342,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case::simple(2.0, "2")]
-    #[case::exp(1.234e10, "12340000000")]
-    #[case::exp_20(1.234e20, "123400000000000000000")]
-    #[case::neg_exp(1.234e-10, "0.0000000001234")]
+    #[case::simple(2.0, "2.0")]
+    #[case::exp(1.234e10, "12340000000.0")]
+    #[case::exp_20(1.234e20, "1.234e20")]
+    #[case::neg_exp(1.234e-10, "1.234e-10")]
     #[case::inf(f32::INFINITY, "null")]
     #[case::neg_inf(f32::NEG_INFINITY, "null")]
     #[case::nan(f32::NAN, "null")]
