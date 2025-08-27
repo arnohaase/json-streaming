@@ -15,7 +15,7 @@
 //! use json_api::blocking::*;
 //!
 //! fn write_something() -> std::io::Result<()> {
-//!     let mut writer = new_pretty_json_writer(std::io::stdout());
+//!     let mut writer = JsonWriter::new_pretty(std::io::stdout());
 //!     {
 //!         let mut o = JsonObject::new(&mut writer)?;
 //!         o.write_string_value("a", "hello")?;
@@ -49,9 +49,10 @@
 pub(crate) mod json_writer;
 pub(crate) mod object;
 pub(crate) mod array;
-pub mod read;
-mod io;
+pub(crate) mod read;
+pub (crate) mod io;
 
+//TODO top-level pub use
 //TODO feature flag for async / blocking support
 //TODO object-per-line
 //TODO unit test for pluggable FloatFormat
@@ -71,6 +72,7 @@ mod tests {
     use super::*;
     use std::io;
     use crate::format::float_format::DefaultFloatFormat;
+    use crate::format::json_formatter::JsonFormatter;
 
     fn do_write_json<F: JsonFormatter>(o: &mut JsonObject<Vec<u8>, F, DefaultFloatFormat>) -> io::Result<()> {
         o.write_string_value("abc", "yo")?;
@@ -117,14 +119,14 @@ mod tests {
 
     #[test]
     fn test_write_combined_compact() -> io::Result<()> {
-        do_test_combined(new_compact_json_writer(Vec::new()),
+        do_test_combined(JsonWriter::new_compact(Vec::new()),
             r#"{"abc":"yo","xyz":"yo","aaaa":["111","11",{},[],null,true,false,-23987,23987,23.235,null,null,23.235,null,null],"ooo":{"lll":"whatever","ar":[]}}"#
         )
     }
 
     #[test]
     fn test_write_combined_pretty() -> io::Result<()> {
-        do_test_combined(new_pretty_json_writer(Vec::new()),
+        do_test_combined(JsonWriter::new_pretty(Vec::new()),
             r#"{
   "abc": "yo",
   "xyz": "yo",

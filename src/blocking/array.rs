@@ -1,8 +1,8 @@
 use crate::blocking::io::BlockingWrite;
 use crate::blocking::json_writer::JsonWriter;
 use crate::blocking::object::JsonObject;
-use crate::blocking::JsonFormatter;
 use crate::format::float_format::FloatFormat;
+use crate::format::json_formatter::JsonFormatter;
 
 /// An [JsonArray] is the API for writing a JSON array, i.e. a sequence of elements. The 
 ///  closing `]` is written when the [JsonArray] instance goes out of scope, or when its `end()`
@@ -152,10 +152,10 @@ impl <'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> Drop for JsonArra
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blocking::{new_compact_json_writer, CompactFormatter};
     use crate::format::float_format::DefaultFloatFormat;
     use rstest::*;
     use std::io;
+    use crate::format::json_formatter::CompactFormatter;
 
     type AS<'a> = JsonArray<'a, Vec<u8>, CompactFormatter, DefaultFloatFormat>;
 
@@ -175,7 +175,7 @@ mod tests {
     #[case::nested_obj_last(Box::new(|ser: &mut AS| { ser.write_u32_value(2)?; ser.start_object()?.end() }), r#"[2,{}]"#)]
     #[case::two_nested_objects(Box::new(|ser: &mut AS| { ser.start_object()?.end()?; ser.start_object()?.end() }), r#"[{},{}]"#)]
     fn test_array(#[case] code: Box<dyn Fn(&mut AS) -> io::Result<()>>, #[case] expected: &str) -> io::Result<()> {
-        let mut writer = new_compact_json_writer(Vec::new());
+        let mut writer = JsonWriter::new_compact(Vec::new());
         {
             let mut array_ser = JsonArray::new(&mut writer)?;
             code(&mut array_ser)?;
@@ -236,7 +236,7 @@ mod tests {
     #[case::f32_nan(Box::new(|w: &mut AS| w.write_f32_value(f32::NAN)), "null")]
     fn test_write_value(#[case] code: Box<dyn Fn(&mut AS) -> io::Result<()>>, #[case] expected: &str) -> io::Result<()> {
         {
-            let mut writer = new_compact_json_writer(Vec::new());
+            let mut writer = JsonWriter::new_compact(Vec::new());
             {
                 let mut array_ser = JsonArray::new(&mut writer)?;
                 code(&mut array_ser)?;
@@ -249,7 +249,7 @@ mod tests {
 
         // test with and without preceding element to verify that 'initial' is handled correctly
         {
-            let mut writer = new_compact_json_writer(Vec::new());
+            let mut writer = JsonWriter::new_compact(Vec::new());
             {
                 let mut array_ser = JsonArray::new(&mut writer)?;
                 array_ser.write_null_value()?;
