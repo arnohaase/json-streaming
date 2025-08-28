@@ -1,5 +1,5 @@
-use crate::format::float_format::FloatFormat;
-use crate::format::json_formatter::JsonFormatter;
+use crate::shared::float_format::FloatFormat;
+use crate::shared::json_formatter::JsonFormatter;
 use crate::nonblocking::io::NonBlockingWrite;
 use crate::nonblocking::json_writer::JsonWriter;
 use crate::nonblocking::object::JsonObject;
@@ -145,8 +145,8 @@ write_arr_int!(usize; write_usize_value);
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::format::float_format::DefaultFloatFormat;
-    use crate::format::json_formatter::CompactFormatter;
+    use crate::shared::float_format::DefaultFloatFormat;
+    use crate::shared::json_formatter::CompactFormatter;
     use rstest::*;
     use std::io;
     use crate::nonblocking::object::tests::ObjectCommand;

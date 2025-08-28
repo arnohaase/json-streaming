@@ -1,196 +1,21 @@
-use core::error::Error;
-use core::fmt::{Display, Formatter};
-use core::str::{FromStr, Utf8Error};
 use crate::nonblocking::io::NonBlockingRead;
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum JsonReadEvent<'a> {
-    StartObject,
-    EndObject,
-    StartArray,
-    EndArray,
-
-    Key(&'a str),
-    StringLiteral(&'a str),
-    NumberLiteral(JsonNumber<'a>),
-    BooleanLiteral(bool),
-    NullLiteral,
-
-    EndOfStream,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct JsonNumber<'a>(&'a str);
-impl <'a> JsonNumber<'a> {
-    pub fn parse<F: FromStr>(&self) -> Result<F, F::Err> {
-        self.0.parse()
-    }
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Location {
-    /// in bytes, not characters - aligned with how Rust counts offsets in strings
-    pub offset: usize,
-    pub line: usize,
-    /// in bytes, not characters - aligned with how Rust counts offsets in strings
-    pub column: usize,
-}
-impl Display for Location {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "line {}, column {} (offset {})", self.line, self.column, self.offset)
-    }
-}
-impl Location {
-    pub fn start() -> Location {
-        Location {
-            offset: 0,
-            line: 1,
-            column: 1,
-        }
-    }
-
-    pub fn after_byte(&mut self, byte: u8) {
-        self.offset += 1;
-        if byte == b'\n' {
-            self.line += 1;
-            self.column = 1;
-        }
-        else {
-            self.column += 1;
-        }
-    }
-}
-
-
-#[derive(Debug)]
-pub enum JsonParseError<E: Error> {
-    Io(E),
-    Utf8(Utf8Error),
-    Parse(&'static str, Location),
-    UnexpectedEvent(Location), //TODO event kind
-    BufferOverflow(Location),
-}
-impl <E: Error> Display for JsonParseError<E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        match self {
-            JsonParseError::Io(err) => write!(f, "I/O error: {}", err),
-            JsonParseError::Utf8(err) => write!(f, "Invalid UTF8: {}", err),
-            JsonParseError::Parse(msg, location) => write!(f, "parse error: {} @ {}", msg, location),
-            JsonParseError::UnexpectedEvent(location) => write!(f, "unexpected event @ {}", location),
-            JsonParseError::BufferOverflow(location) => write!(f, "buffer overflow @ {}", location),
-        }
-    }
-}
-
-impl <E: Error> Error for JsonParseError<E> {
-}
-impl <E: Error> From<E> for JsonParseError<E> {
-    fn from(value: E) -> Self {
-        JsonParseError::Io(value)
-    }
-}
-
-
-type ParseResult<E, T> = Result<T, JsonParseError<E>>;
-
-
-/// Simple state tracking to handle those parts of the grammar that require only local context. That
-///  is essentially everything except the distinction between objects and arrays.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum ReaderState {
-    /// Immediately after a nested object or array starts. This needs separate handling from
-    ///  'BeforeEntry' to reject trailing commas in objects and arrays
-    Initial,
-    /// Ready to accept the current container's next entry, i.e. a value (for arrays) or a key/value
-    ///  pair (for objects)
-    BeforeEntry,
-    /// After a key, i.e. values are the only valid follow-up
-    AfterKey,
-    /// After a value, i.e. a comma or the closing bracket of the current container is expected
-    AfterValue,
-}
-
+use crate::shared::read::*;
+use core::str::FromStr;
 //TODO StackBufferJsonReader
 //TODO HeapBufferJsonReader
 
 //TODO flag for 'require comma after array / object' -> top-level, newline-separated sequence of objects
 
-//TODO extract shared part blocking / nonblocking?
-
 //TODO documentation: tokenizer, no grammar check --> grammar checking wrapper?
 pub struct ProvidedBufferJsonReader<'a, R: NonBlockingRead, const N:usize = 8192> {
-    buf: &'a mut [u8;N],
-    ind_end_buf: usize,
+    inner: ReaderInner<'a, N, R::Error>,
     reader: R,
-    state: ReaderState,
-    parked_next: Option<u8>,
-    cur_location: Location,
 }
 impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
-    pub fn new(buf: &'a mut [u8;N], reader: R) -> Self {
+    pub fn new(buf: &'a mut [u8;N], reader: R) -> Self { //TODO Box - non-blocking is not no-std
         Self {
-            buf,
-            ind_end_buf: 0,
+            inner: ReaderInner::new(buf),
             reader,
-            state: ReaderState::Initial,
-            parked_next: None,
-            cur_location: Location::start(),
-        }
-    }
-
-    fn ensure_accept_value(&mut self) -> ParseResult<R::Error,  ()> {
-        match self.state {
-            ReaderState::Initial |
-            ReaderState::BeforeEntry |
-            ReaderState::AfterKey => {
-                Ok(())
-            }
-            ReaderState::AfterValue => {
-                self.parse_err("missing comma")
-            }
-        }
-    }
-
-    fn ensure_accept_end_nested(&mut self) -> ParseResult<R::Error, ()> {
-        match self.state {
-            ReaderState::Initial |
-            ReaderState::AfterValue => {
-                Ok(())
-            }
-            ReaderState::BeforeEntry => {
-                self.parse_err("trailing comma")
-            }
-            ReaderState::AfterKey => {
-                self.parse_err("key without a value")
-            }
-        }
-    }
-
-    fn state_change_for_value(&mut self) -> ParseResult<R::Error,  ()> {
-        match self.state {
-            ReaderState::Initial |
-            ReaderState::BeforeEntry |
-            ReaderState::AfterKey => {
-                self.state = ReaderState::AfterValue;
-                Ok(())
-            }
-            ReaderState::AfterValue => {
-                self.parse_err("missing comma")
-            }
-        }
-    }
-
-    fn on_comma(&mut self) -> ParseResult<R::Error,  ()> {
-        match self.state {
-            ReaderState::AfterValue => {
-                self.state = ReaderState::BeforeEntry;
-                Ok(())
-            }
-            ReaderState::Initial |
-            ReaderState::BeforeEntry |
-            ReaderState::AfterKey => {
-                self.parse_err("unexpected comma")
-            }
         }
     }
 
@@ -202,49 +27,49 @@ impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
                 Ok(JsonReadEvent::EndOfStream)
             },
             Some(b',') => {
-                self.on_comma()?;
+                self.inner.on_comma()?;
                 Box::pin(self.next()).await
             }
             Some(b'{') => {
-                self.ensure_accept_value()?;
-                self.state = ReaderState::Initial;
+                self.inner.ensure_accept_value()?;
+                self.inner.state = ReaderState::Initial;
                 Ok(JsonReadEvent::StartObject)
             },
             Some(b'}') => {
-                self.ensure_accept_end_nested()?;
-                self.state = ReaderState::AfterValue;
+                self.inner.ensure_accept_end_nested()?;
+                self.inner.state = ReaderState::AfterValue;
                 Ok(JsonReadEvent::EndObject)
             },
             Some(b'[') => {
-                self.ensure_accept_value()?;
-                self.state = ReaderState::Initial;
+                self.inner.ensure_accept_value()?;
+                self.inner.state = ReaderState::Initial;
                 Ok(JsonReadEvent::StartArray)
             },
             Some(b']') => {
-                self.ensure_accept_end_nested()?;
-                self.state = ReaderState::AfterValue;
+                self.inner.ensure_accept_end_nested()?;
+                self.inner.state = ReaderState::AfterValue;
                 Ok(JsonReadEvent::EndArray)
             },
 
             Some(b'n') => {
-                self.state_change_for_value()?;
+                self.inner.state_change_for_value()?;
                 self.consume_null_literal().await
             },
             Some(b't') => {
-                self.state_change_for_value()?;
+                self.inner.state_change_for_value()?;
                 self.consume_true_literal().await
             },
             Some(b'f') => {
-                self.state_change_for_value()?;
+                self.inner.state_change_for_value()?;
                 self.consume_false_literal().await
             },
 
             Some(b'"') => self.parse_after_quote().await, // key or string value based on following ':'
             Some(b) => {
-                self.state_change_for_value()?;
+                self.inner.state_change_for_value()?;
                 match b {
                     b'-' | b'0'..=b'9' => self.parse_number_literal(b).await,
-                    _ => self.parse_err("invalid JSON literal")
+                    _ => self.inner.parse_err("invalid JSON literal")
                 }
             },
         }
@@ -267,7 +92,7 @@ impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
             JsonReadEvent::NumberLiteral(n) => {
                 match n.parse::<T>() {
                     Ok(n) => Ok(n),
-                    Err(_) => self.parse_err("invalid number"),
+                    Err(_) => self.inner.parse_err("invalid number"),
                 }
             },
             _ => Err(JsonParseError::UnexpectedEvent(location)),
@@ -282,7 +107,7 @@ impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
             JsonReadEvent::NumberLiteral(n) => {
                 match n.parse::<T>() {
                     Ok(n) => Ok(Some(n)),
-                    Err(_) => self.parse_err("invalid number"),
+                    Err(_) => self.inner.parse_err("invalid number"),
                 }
             },
             _ => Err(JsonParseError::UnexpectedEvent(location)),
@@ -371,7 +196,7 @@ impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
                 b' ' | b'\t' | b'\n' | b'\r' => {
                 }
                 next => {
-                    self.parked_next = Some(next);
+                    self.inner.parked_next = Some(next);
                     break;
                 }
             }
@@ -381,13 +206,13 @@ impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
 
     async fn read_next_byte(&mut self) -> ParseResult<R::Error,  Option<u8>> {
         // Parsing JSON requires a lookahead of a single byte, which is stored in 'parked_next'
-        if let Some(parked) = self.parked_next.take() {
+        if let Some(parked) = self.inner.parked_next.take() {
             return Ok(Some(parked));
         }
 
         //TODO BufRead? no_std trait? optimize & clean up!
         if let Some(byte) =self.reader.read().await? {
-            self.cur_location.after_byte(byte);
+            self.inner.cur_location.after_byte(byte);
             Ok(Some(byte))
         }
         else {
@@ -397,57 +222,48 @@ impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
 
     async fn consume_null_literal(&mut self) -> ParseResult<R::Error,  JsonReadEvent> {
         if self.read_next_byte().await? != Some(b'u') {
-            return self.parse_err("incomplete null literal");
+            return self.inner.parse_err("incomplete null literal");
         }
         if self.read_next_byte().await? != Some(b'l') {
-            return self.parse_err("incomplete null literal");
+            return self.inner.parse_err("incomplete null literal");
         }
         if self.read_next_byte().await? != Some(b'l') {
-            return self.parse_err("incomplete null literal");
+            return self.inner.parse_err("incomplete null literal");
         }
         Ok(JsonReadEvent::NullLiteral)
     }
 
     async fn consume_true_literal(&mut self) -> ParseResult<R::Error,  JsonReadEvent> {
         if self.read_next_byte().await? != Some(b'r') {
-            return self.parse_err("incomplete true literal");
+            return self.inner.parse_err("incomplete true literal");
         }
         if self.read_next_byte().await? != Some(b'u') {
-            return self.parse_err("incomplete true literal");
+            return self.inner.parse_err("incomplete true literal");
         }
         if self.read_next_byte().await? != Some(b'e') {
-            return self.parse_err("incomplete true literal");
+            return self.inner.parse_err("incomplete true literal");
         }
         Ok(JsonReadEvent::BooleanLiteral(true))
     }
 
     async fn consume_false_literal(&mut self) -> ParseResult<R::Error,  JsonReadEvent> {
         if self.read_next_byte().await? != Some(b'a') {
-            return self.parse_err("incomplete false literal");
+            return self.inner.parse_err("incomplete false literal");
         }
         if self.read_next_byte().await? != Some(b'l') {
-            return self.parse_err("incomplete false literal");
+            return self.inner.parse_err("incomplete false literal");
         }
         if self.read_next_byte().await? != Some(b's') {
-            return self.parse_err("incomplete false literal");
+            return self.inner.parse_err("incomplete false literal");
         }
         if self.read_next_byte().await? != Some(b'e') {
-            return self.parse_err("incomplete false literal");
+            return self.inner.parse_err("incomplete false literal");
         }
         Ok(JsonReadEvent::BooleanLiteral(false))
     }
 
-    fn append_to_buf(&mut self, ch: u8) -> ParseResult<R::Error,  ()> {
-        if self.ind_end_buf >= N {
-            return self.buf_overflow();
-        }
-        self.buf[self.ind_end_buf] = ch;
-        self.ind_end_buf += 1;
-        Ok(())
-    }
-
     async fn parse_after_quote(&mut self) -> ParseResult<R::Error,  JsonReadEvent> {
-        self.ind_end_buf = 0;
+        self.inner.ind_end_buf = 0;
 
         loop {
             if let Some(next) = self.read_next_byte().await? {
@@ -455,28 +271,28 @@ impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
                     b'"' => break,
                     b'\\' => {
                         match self.read_next_byte().await? {
-                            Some(b'"') => self.append_to_buf(b'"')?,
-                            Some(b'\\') => self.append_to_buf(b'\\')?,
-                            Some(b'/') => self.append_to_buf(b'/')?,
-                            Some(b'b') => self.append_to_buf(0x08)?,
-                            Some(b'f') => self.append_to_buf(0x0c)?,
-                            Some(b'n') => self.append_to_buf(b'\n')?,
-                            Some(b'r') => self.append_to_buf(b'\r')?,
-                            Some(b't') => self.append_to_buf(b'\t')?,
+                            Some(b'"') => self.inner.append_to_buf(b'"')?,
+                            Some(b'\\') => self.inner.append_to_buf(b'\\')?,
+                            Some(b'/') => self.inner.append_to_buf(b'/')?,
+                            Some(b'b') => self.inner.append_to_buf(0x08)?,
+                            Some(b'f') => self.inner.append_to_buf(0x0c)?,
+                            Some(b'n') => self.inner.append_to_buf(b'\n')?,
+                            Some(b'r') => self.inner.append_to_buf(b'\r')?,
+                            Some(b't') => self.inner.append_to_buf(b'\t')?,
                             Some(b'u') => {
                                 let cp = self.parse_unicode_codepoint().await?;
-                                self.append_code_point(cp)?;
+                                self.inner.append_code_point(cp)?;
                             },
-                            _ => return self.parse_err("invalid escape in string literal"),
+                            _ => return self.inner.parse_err("invalid escape in string literal"),
                         }
                     },
                     ch => {
-                        self.append_to_buf(ch)?;
+                        self.inner.append_to_buf(ch)?;
                     }
                 }
             }
             else {
-                return self.parse_err("unterminated string literal");
+                return self.inner.parse_err("unterminated string literal");
             }
         }
 
@@ -486,30 +302,24 @@ impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
         self.consume_whitespace().await?;
         match self.read_next_byte().await? {
             Some(b':') => {
-                match self.state {
+                match self.inner.state {
                     ReaderState::Initial |
                     ReaderState::BeforeEntry => {
-                        self.state = ReaderState::AfterKey;
+                        self.inner.state = ReaderState::AfterKey;
                     }
                     ReaderState::AfterKey => {
-                        return self.parse_err("two keys without value");
+                        return self.inner.parse_err("two keys without value");
                     }
                     ReaderState::AfterValue => {
-                        return self.parse_err("missing comma");
+                        return self.inner.parse_err("missing comma");
                     }
                 }
-                Ok(JsonReadEvent::Key(core::str::from_utf8(
-                    &self.buf[..self.ind_end_buf])
-                    .map_err(|e| JsonParseError::Utf8(e))?
-                ))
+                Ok(JsonReadEvent::Key(self.inner.buf_as_str()?))
             },
             other => {
-                self.state_change_for_value()?;
-                self.parked_next = other;
-                Ok(JsonReadEvent::StringLiteral(core::str::from_utf8(
-                    &self.buf[..self.ind_end_buf])
-                    .map_err(|e| JsonParseError::Utf8(e))?
-                ))
+                self.inner.state_change_for_value()?;
+                self.inner.parked_next = other;
+                Ok(JsonReadEvent::StringLiteral(self.inner.buf_as_str()?))
             }
         }
     }
@@ -525,77 +335,48 @@ impl<'a, R: NonBlockingRead, const N:usize> ProvidedBufferJsonReader<'a, R, N> {
                     b'a'..=b'f' => cp += (b - b'a' + 10) as u16,
                     b'A'..=b'Z' => cp += (b - b'A' + 10) as u16,
                     _ => {
-                        return self.parse_err("not a four-digit hex number after \\u");
+                        return self.inner.parse_err("not a four-digit hex number after \\u");
                     }
                 }
             }
             else {
-                return self.parse_err("incomplete UTF codepoint in string literal");
+                return self.inner.parse_err("incomplete UTF codepoint in string literal");
             }
         }
         Ok(cp)
     }
 
-    /// see https://de.wikipedia.org/wiki/UTF-8
-    fn append_code_point(&mut self, cp: u16) -> ParseResult<R::Error,  ()> {
-        match cp {
-            0x0000..=0x007F => {
-                self.append_to_buf(cp as u8)
-            }
-            0x0080..=0x07FF => {
-                self.append_to_buf(0xC0 | ((cp >> 6) as u8 & 0x1F))?;
-                self.append_to_buf(0x80 | ( cp       as u8 & 0x3F))
-            }
-            _ => { // 0x00800..0xffff
-                self.append_to_buf(0xE0 | ((cp >> 12) as u8 & 0x0F))?;
-                self.append_to_buf(0x80 | ((cp >>  6) as u8 & 0x3F))?;
-                self.append_to_buf(0x80 | ( cp        as u8 & 0x3F))
-            }
-        }
-    }
-
     async fn parse_number_literal(&mut self, b: u8) -> ParseResult<R::Error,  JsonReadEvent> {
-        self.buf[0] = b;
-        self.ind_end_buf = 1;
+        self.inner.buf[0] = b;
+        self.inner.ind_end_buf = 1;
 
         while let Some(next) = self.read_next_byte().await? {
             match next {
                 b'0'..=b'9' |
                 b'+' | b'-' | b'e' | b'E' |
                 b'.' => {
-                    self.append_to_buf(next)?;
+                    self.inner.append_to_buf(next)?;
                 }
                 other => {
-                    self.parked_next = Some(other);
+                    self.inner.parked_next = Some(other);
                     break;
                 }
             }
         }
-        Ok(JsonReadEvent::NumberLiteral(JsonNumber(core::str::from_utf8(
-            &self.buf[..self.ind_end_buf])
-            .map_err(|e| JsonParseError::Utf8(e))?
-        )))
-    }
-
-    fn parse_err<T>(&self, msg: &'static str) -> ParseResult<R::Error,  T> {
-        Err(JsonParseError::Parse(msg, self.cur_location))
-    }
-
-    fn buf_overflow<T>(&self) -> ParseResult<R::Error,  T> {
-        Err(JsonParseError::BufferOverflow(self.cur_location))
+        Ok(JsonReadEvent::NumberLiteral(JsonNumber(self.inner.buf_as_str()?)))
     }
 
     #[inline]
     pub fn location(&self) -> Location {
-        self.cur_location
+        self.inner.cur_location
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
     use super::*;
     use rstest::*;
+    use std::io::Cursor;
 
     fn assert_is_similar_error(actual: &JsonParseError<std::io::Error>, expected: &JsonParseError<std::io::Error>) {
 

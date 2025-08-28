@@ -1,5 +1,5 @@
-use crate::format::float_format::{DefaultFloatFormat, FloatFormat};
-use crate::format::json_formatter::{CompactFormatter, JsonFormatter, PrettyFormatter};
+use crate::shared::float_format::{DefaultFloatFormat, FloatFormat};
+use crate::shared::json_formatter::{CompactFormatter, JsonFormatter, PrettyFormatter};
 use crate::nonblocking::io::NonBlockingWrite;
 use core::fmt::Display;
 use core::marker::PhantomData;
@@ -208,7 +208,6 @@ mod tests {
     use super::*;
     use rstest::*;
     use std::fmt::Write;
-    use std::io;
 
     #[tokio::test]
     async fn test_json_writer() {

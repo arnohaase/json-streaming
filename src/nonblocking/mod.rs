@@ -4,12 +4,14 @@ pub(crate) mod json_writer;
 pub(crate) mod object;
 pub(crate) mod read;
 
+#[cfg(not(test))]
 #[allow(unused_imports)]
 pub use array::*;
 #[allow(unused_imports)]
 pub use io::*;
 #[allow(unused_imports)]
 pub use json_writer::*;
+#[cfg(not(test))]
 #[allow(unused_imports)]
 pub use object::*;
 
@@ -19,8 +21,8 @@ pub use read::*;
 #[cfg(test)]
 mod tests {
     use std::io;
-    use crate::format::float_format::DefaultFloatFormat;
-    use crate::format::json_formatter::JsonFormatter;
+    use crate::shared::float_format::DefaultFloatFormat;
+    use crate::shared::json_formatter::JsonFormatter;
     use crate::nonblocking::json_writer::JsonWriter;
     use crate::nonblocking::object::JsonObject;
 

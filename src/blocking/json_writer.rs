@@ -1,6 +1,6 @@
 use crate::blocking::io::BlockingWrite;
-use crate::format::float_format::{DefaultFloatFormat, FloatFormat};
-use crate::format::json_formatter::{CompactFormatter, JsonFormatter, PrettyFormatter};
+use crate::shared::float_format::{DefaultFloatFormat, FloatFormat};
+use crate::shared::json_formatter::{CompactFormatter, JsonFormatter, PrettyFormatter};
 use core::fmt::Display;
 use core::marker::PhantomData;
 

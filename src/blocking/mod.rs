@@ -30,7 +30,7 @@
 //!  a [std::io::Write] with some support for handling JSON handling of data types. It also holds
 //!  the [JsonFormatter], which determines how the generated JSON is formatted. While it is
 //!  possible for applications to provide their own implementations, the library provides two
-//!  variants that are expected to cover the vast majority of cases (given that the format does
+//!  variants that are expected to cover the vast majority of cases (given that the shared does
 //!  not affect the generated JSON's semantics):
 //! * [CompactFormatter] writes a minimum of whitespace
 //! * [PrettyFormatter] adds some whitespace and indentation for human readability
@@ -68,8 +68,8 @@ pub use read::*;
 mod tests {
     use super::*;
     use std::io;
-    use crate::format::float_format::DefaultFloatFormat;
-    use crate::format::json_formatter::JsonFormatter;
+    use crate::shared::float_format::DefaultFloatFormat;
+    use crate::shared::json_formatter::JsonFormatter;
 
     fn do_write_json<F: JsonFormatter>(o: &mut JsonObject<Vec<u8>, F, DefaultFloatFormat>) -> io::Result<()> {
         o.write_string_value("abc", "yo")?;
