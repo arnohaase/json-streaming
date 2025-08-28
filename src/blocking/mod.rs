@@ -52,11 +52,6 @@ pub(crate) mod array;
 pub(crate) mod read;
 pub (crate) mod io;
 
-//TODO top-level pub use
-//TODO feature flag for async / blocking support
-//TODO object-per-line
-//TODO unit test for pluggable FloatFormat
-
 #[allow(unused_imports)]
 pub use array::*;
 #[allow(unused_imports)]

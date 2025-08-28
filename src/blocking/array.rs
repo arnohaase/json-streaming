@@ -144,7 +144,9 @@ write_arr_int!(usize; write_usize_value);
 impl <'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> Drop for JsonArray<'a, W, F, FF> {
     fn drop(&mut self) {
         if !self.is_ended {
-            let _ = self._end();
+            if let Err(e) = self._end() {
+                self.writer.set_unreported_error(e);
+            }
         }
     }
 }

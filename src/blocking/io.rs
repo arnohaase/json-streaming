@@ -16,7 +16,6 @@ impl <W: std::io::Write> BlockingWrite for W {
     }
 }
 
-
 pub trait BlockingRead {
     type Error: Error;
 
