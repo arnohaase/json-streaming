@@ -4,6 +4,17 @@ pub(crate) mod json_writer;
 pub(crate) mod object;
 pub(crate) mod read;
 
+#[allow(unused_imports)]
+pub use array::*;
+#[allow(unused_imports)]
+pub use io::*;
+#[allow(unused_imports)]
+pub use json_writer::*;
+#[allow(unused_imports)]
+pub use object::*;
+
+#[allow(unused_imports)]
+pub use read::*;
 
 #[cfg(test)]
 mod tests {

@@ -55,6 +55,8 @@ pub (crate) mod io;
 #[allow(unused_imports)]
 pub use array::*;
 #[allow(unused_imports)]
+pub use io::*;
+#[allow(unused_imports)]
 pub use json_writer::*;
 #[allow(unused_imports)]
 pub use object::*;

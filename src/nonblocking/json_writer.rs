@@ -13,13 +13,6 @@ pub struct JsonWriter <W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> {
     inner: W,
     formatter: F,
     number_write_buf: NumWriteBuf,
-    /// ending an object / array through RAII can cause an IO error that can not be propagated
-    ///  to calling code because [Drop] can not return errors. Such errors are stored in this
-    ///  field and returned from the next I/O operation.
-    ///
-    /// For this to work reliably, it is necessary to call [JsonWriter::flush()] or
-    ///  [JsonWriter::into_inner()] before it goes out of scope, in analogy to `BufWriter`'s API.
-    unreported_error: Option<W::Error>,
     _float_format: FF,
 }
 
@@ -32,14 +25,12 @@ impl <W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonWriter<W, F, F
             inner,
             formatter,
             number_write_buf: NumWriteBuf::new(),
-            unreported_error: None,
             _float_format: float_format,
         }
     }
 
     /// Internal API for writing raw bytes to the underlying [Write].
     pub async fn write_bytes(&mut self, data: &[u8]) -> Result<(), W::Error> {
-        self.flush()?;
         self.inner.write_all(data).await
     }
 
@@ -104,53 +95,33 @@ impl <W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonWriter<W, F, F
 
     /// Internal API for interacting with the formatter
     pub async fn write_format_after_key(&mut self) -> Result<(), W::Error> {
-        self.flush()?;
         self.inner.write_all(self.formatter.after_key().as_bytes()).await
     }
 
     /// Internal API for interacting with the formatter
     pub async fn write_format_after_start_nested(&mut self) -> Result<(), W::Error> {
-        self.flush()?;
         self.inner.write_all(self.formatter.after_start_nested().as_bytes()).await
     }
 
     /// Internal API for interacting with the formatter
     pub async fn write_format_after_element(&mut self) -> Result<(), W::Error> {
-        self.flush()?;
         self.inner.write_all(self.formatter.after_element().as_bytes()).await
     }
 
     /// Internal API for interacting with the formatter
     pub async fn write_format_before_end_nested(&mut self, is_empty: bool) -> Result<(), W::Error> {
-        self.flush()?;
         self.inner.write_all(self.formatter.before_end_nested(is_empty).as_bytes()).await
     }
 
     /// Internal API for interacting with the formatter
     pub async fn write_format_indent(&mut self) -> Result<(), W::Error> {
-        self.flush()?;
         self.inner.write_all(self.formatter.indent().as_bytes()).await
-    }
-
-    /// Check and return any unreported error that occurred when an object / array went out of 
-    ///  scope. Applications should call this function when serialization is complete to ensure
-    ///  that no errors get lost.    
-    pub fn flush(&mut self) -> Result<(), W::Error> {
-        if let Some(e) = self.unreported_error.take() {
-            return Err(e);
-        }
-        Ok(())
     }
 
     /// End this [JsonWriter]'s lifetime, returning the [Write] instance it owned. This function
     ///  returns any unreported errors.
-    pub fn into_inner(mut self) -> Result<W, W::Error> {
-        self.flush()?;
+    pub fn into_inner(self) -> Result<W, W::Error> {
         Ok(self.inner)
-    }
-
-    pub(crate) fn set_unreported_error(&mut self, unreported_error: W::Error) {
-        self.unreported_error = Some(unreported_error);
     }
 }
 
@@ -258,8 +229,6 @@ mod tests {
         writer.write_bytes(b"a").await.unwrap();
         writer.write_bytes(b"b").await.unwrap();
         writer.write_bytes(b"cde").await.unwrap();
-
-        writer.flush().unwrap();
 
         assert_eq!(as_written_string(writer), "abcde");
     }
@@ -377,25 +346,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_set_reported_error() {
-        let mut writer = JsonWriter::new_compact(Vec::new());
-        writer.write_bytes(b"yo").await.unwrap();
-
-        writer.set_unreported_error(io::Error::new(io::ErrorKind::Other, "something went wrong"));
-        match writer.write_bytes(b" after error").await {
-            Ok(_) => {
-                panic!("previous error should have been returned");
-            }
-            Err(e) => {
-                assert_eq!(e.kind(), io::ErrorKind::Other);
-                assert_eq!(e.to_string(), "something went wrong");
-            },
-        }
-
-        assert_eq!(as_written_string(writer), "yo");
-    }
-
-    #[tokio::test]
     async fn test_float_format() {
         struct OtherFf;
         impl FloatFormat for OtherFf {
@@ -413,25 +363,5 @@ mod tests {
         writer.write_f32(3.4).await.unwrap();
         let written = writer.into_inner().unwrap();
         assert_eq!(&written, b"_1.2_64_3.4_32");
-    }
-
-    #[tokio::test]
-    async fn test_flush() {
-        let mut writer = JsonWriter::new_compact(Vec::new());
-        writer.write_bytes(b"yo").await.unwrap();
-
-        writer.set_unreported_error(io::Error::new(io::ErrorKind::Other, "something went wrong"));
-
-        match writer.flush() {
-            Ok(_) => {
-                panic!("previous error should have been returned");
-            }
-            Err(e) => {
-                assert_eq!(e.kind(), io::ErrorKind::Other);
-                assert_eq!(e.to_string(), "something went wrong");
-            },
-        }
-
-        assert_eq!(as_written_string(writer), "yo");
     }
 }

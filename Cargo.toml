@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-no-std = []
+default = ["blocking", "non-blocking"]
+blocking = []
+non-blocking = []
+no-std = ["blocking"]
 
 [dev-dependencies]
 rstest = "0.26"
