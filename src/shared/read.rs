@@ -110,16 +110,16 @@ pub(crate) enum ReaderState {
     AfterValue,
 }
 
-pub(crate) struct ReaderInner<'a, const N:usize, E: Error> {
-    pub buf: &'a mut [u8;N],
+pub(crate) struct ReaderInner<B: AsMut<[u8]>, E: Error> {
+    pub buf: B,
     pub ind_end_buf: usize,
     pub state: ReaderState,
     pub parked_next: Option<u8>,
     pub cur_location: Location,
     pd: PhantomData<E>,
 }
-impl <'a, const N:usize, E: Error> ReaderInner<'a, N, E> {
-    pub fn new(buf: &'a mut [u8;N]) -> Self {
+impl <B: AsMut<[u8]>, E: Error> ReaderInner<B, E> {
+    pub fn new(buf: B) -> Self {
         Self {
             buf,
             ind_end_buf: 0,
@@ -131,10 +131,10 @@ impl <'a, const N:usize, E: Error> ReaderInner<'a, N, E> {
     }
 
     pub fn append_to_buf(&mut self, ch: u8) -> ParseResult<E, ()> {
-        if self.ind_end_buf >= N {
+        if self.ind_end_buf >= self.buf.as_mut().len() {
             return self.buf_overflow();
         }
-        self.buf[self.ind_end_buf] = ch;
+        self.buf.as_mut()[self.ind_end_buf] = ch;
         self.ind_end_buf += 1;
         Ok(())
     }
@@ -157,9 +157,11 @@ impl <'a, const N:usize, E: Error> ReaderInner<'a, N, E> {
         }
     }
 
-    pub fn buf_as_str(&self) -> ParseResult<E, &str> {
+    pub fn buf_as_str(&mut self) -> ParseResult<E, &str> {
+        // the reference is used only immutably, but all callers have a mutable refrence anyway
+        //  and calling as_mut() avoids the need for another type bound
         core::str::from_utf8(
-            &self.buf[..self.ind_end_buf])
+            &self.buf.as_mut()[..self.ind_end_buf])
             .map_err(|e| JsonParseError::Utf8(e))
     }
 
