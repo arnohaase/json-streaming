@@ -7,7 +7,7 @@ pub trait BlockingWrite {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error>;
 }
 
-#[cfg(not(feature = "no-std"))]
+#[cfg(feature = "std")]
 impl <W: std::io::Write> BlockingWrite for W {
     type Error = std::io::Error;
 
@@ -22,7 +22,7 @@ pub trait BlockingRead {
     fn read(&mut self) -> Result<Option<u8>, Self::Error>;
 }
 
-#[cfg(not(feature = "no-std"))]
+#[cfg(feature = "std")]
 /// Blanket implementation for [std::io::Read] - implementation should preferably use an internal
 ///  read buffer because access is fine-grained
 impl <R: std::io::Read> BlockingRead for R {

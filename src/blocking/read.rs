@@ -9,7 +9,7 @@ pub struct JsonReader<B: AsMut<[u8]>, R: BlockingRead> {
     reader: R,
 }
 
-#[cfg(not(feature = "no-std"))]
+#[cfg(feature = "std")]
 impl<R: BlockingRead> JsonReader<Vec<u8>, R> {
     pub fn new(buf_size: usize, reader: R) -> Self {
         let buf = vec![0u8; buf_size];
