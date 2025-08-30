@@ -84,7 +84,7 @@ impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, 
     ///  for writing elements to the nested object. When the returned [JsonObject] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested object is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub async fn start_object(&mut self, key: &str) -> Result<JsonObject<W, F, FF>, W::Error> {
+    pub async fn start_object(&mut self, key: &str) -> Result<JsonObject<'_, W, F, FF>, W::Error> {
         self.write_key(key).await?;
         JsonObject::new(&mut self.writer).await
     }
@@ -93,7 +93,7 @@ impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, 
     ///  for writing elements to the nested object. When the returned [JsonArray] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested array is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub async fn start_array(&mut self, key: &str) -> Result<JsonArray<W, F, FF>, W::Error> {
+    pub async fn start_array(&mut self, key: &str) -> Result<JsonArray<'_, W, F, FF>, W::Error> {
         self.write_key(key).await?;
         JsonArray::new(self.writer).await
     }
