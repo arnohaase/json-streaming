@@ -8,7 +8,7 @@ pub trait NonBlockingWrite {
     async fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error>;
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature="tokio")))]
 #[async_trait]
 impl NonBlockingWrite for Vec<u8> {
     type Error = std::io::Error;

@@ -12,8 +12,13 @@ tokio = ["non-blocking", "std"]
 
 [dev-dependencies]
 rstest = "0.26"
-tokio = { version = "1.47", default-features = false, features = ["macros", "rt"] }
+tokio = { version = "1.47", default-features = false, features = ["macros", "rt-multi-thread", "rt"] }
 
 [dependencies]
 async-trait = "0.1"
 tokio = { version = "1", default-features = false, features = ["io-util"] }
+
+[[example]]
+name = "non-blocking"
+path = "examples/non_blocking.rs"
+required-features = ["tokio"]
