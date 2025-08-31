@@ -212,6 +212,56 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    //TODO unit test
+    /// start object / start array is consumed -> count start / end, count nesting levels, end after
+    ///  consuming an 'end'
+    pub async fn skip_to_end_of_current_scope(&mut self) -> JsonParseResult<(), R::Error> {
+        let mut nesting_level = 1;
+        loop {
+            match self.next().await? {
+                JsonReadToken::StartObject | JsonReadToken::StartArray => {
+                    nesting_level += 1;
+                }
+                JsonReadToken::EndObject | JsonReadToken::EndArray=> {
+                    nesting_level -= 1;
+                    if nesting_level == 0 {
+                        break;
+                    }
+                }
+                JsonReadToken::EndOfStream => {
+                    return Err(JsonParseError::UnexpectedToken(self.location()));
+                }
+                _ => {
+                    continue;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    //TODO unit test
+    /// in an object, after reading an unhandled key
+    pub async fn skip_value(&mut self) -> JsonParseResult<(), R::Error> {
+        match self.next().await? {
+            JsonReadToken::Key(_) |
+            JsonReadToken::EndObject |
+            JsonReadToken::EndArray |
+            JsonReadToken::EndOfStream => {
+                Err(JsonParseError::UnexpectedToken(self.location()))
+            }
+            JsonReadToken::StartObject |
+            JsonReadToken::StartArray => {
+                self.skip_to_end_of_current_scope().await
+            }
+            JsonReadToken::StringLiteral(_) |
+            JsonReadToken::NumberLiteral(_) |
+            JsonReadToken::BooleanLiteral(_) |
+            JsonReadToken::NullLiteral => {
+                Ok(())
+            }
+        }
+    }
+
     async fn consume_whitespace(&mut self) -> JsonParseResult<(), R::Error> {
         while let Some(next) = self.read_next_byte().await? {
             match next {
