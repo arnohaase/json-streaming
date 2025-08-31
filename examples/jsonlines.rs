@@ -1,9 +1,9 @@
 //! Illustrate writing and reading the 'jsonlines' format (https://jsonlines.org), with a
 //!  JSON object per line without a wrapping JSON array or separating commas.
-//! 
+//!
 //! This format is sometimes used for streaming or sending large numbers of simple data, e.g.
 //!  log events.
-//! 
+//!
 //! While the json-streaming library has no explicit support for the 'jsonlines' format, it is
 //!  straightforward to read and write in a fully streaming fashion.
 //! * When writing, create a new top-level [JsonObject] for each line, and write the `\n` between
@@ -44,7 +44,8 @@ fn read(json_lines: String) -> JsonParseResult<(), io::Error> {
 }
 
 fn write() -> io::Result<String> {
-    let mut writer = JsonWriter::new_compact(Vec::new());
+    let mut buf = Vec::new();
+    let mut writer = JsonWriter::new_compact(&mut buf);
 
     let mut obj = JsonObject::new(&mut writer)?;
     obj.write_string_value("a", "yo")?;
@@ -58,7 +59,7 @@ fn write() -> io::Result<String> {
     obj.end()?;
     writer.write_bytes(b"\n")?;
 
-    let buf = writer.into_inner().unwrap();
+    let buf = writer.into_inner().unwrap().to_vec();
     let s = String::from_utf8(buf).unwrap();
     Ok(s)
 }

@@ -9,8 +9,8 @@ use core::marker::PhantomData;
 /// 
 /// Application code should usually not have to interact with [JsonWriter] directly, but through
 ///  [ObjectSer] or [ArraySer] wrapped around it.
-pub struct JsonWriter <W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> {
-    inner: W,
+pub struct JsonWriter <'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> {
+    inner: &'a mut W,
     formatter: F,
     /// ending an object / array through RAII can cause an IO error that can not be propagated
     ///  to calling code because [Drop] can not return errors. Such errors are stored in this
@@ -22,11 +22,11 @@ pub struct JsonWriter <W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> {
     _float_format: FF,
 }
 
-impl <W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonWriter<W, F, FF> {
+impl <'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonWriter<'a, W, F, FF> {
     /// Create a new [JsonWriter] instance for given [Write] instance and an explicitly provided
     ///  [JsonFormatter]. It gives full flexibility; for most cases, `new_compact()` and 
     ///  `new_pretty()` functions are more convenient. 
-    pub fn new(inner: W, formatter: F, float_format: FF) -> JsonWriter<W, F, FF> {
+    pub fn new(inner: &'a mut W, formatter: F, float_format: FF) -> JsonWriter<'a, W, F, FF> {
         JsonWriter {
             inner,
             formatter,
@@ -143,7 +143,7 @@ impl <W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonWriter<W, F, FF> 
 
     /// End this [JsonWriter]'s lifetime, returning the [Write] instance it owned. This function
     ///  returns any unreported errors.
-    pub fn into_inner(mut self) -> Result<W, W::Error> {
+    pub fn into_inner(mut self) -> Result<&'a mut W, W::Error> {
         self.flush()?;
         Ok(self.inner)
     }
@@ -155,26 +155,26 @@ impl <W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonWriter<W, F, FF> 
 
 //TODO Rust Doc, move convenience to prominent place, documentation
 
-impl <W: BlockingWrite> JsonWriter<W, CompactFormatter, DefaultFloatFormat> {
-    pub fn new_compact(inner: W) -> Self {
+impl <'a, W: BlockingWrite> JsonWriter<'a, W, CompactFormatter, DefaultFloatFormat> {
+    pub fn new_compact(inner: &'a mut W) -> Self {
         JsonWriter::new(inner, CompactFormatter, DefaultFloatFormat)
     }
 }
 
-impl <W: BlockingWrite> JsonWriter<W, PrettyFormatter, DefaultFloatFormat> {
-    pub fn new_pretty(inner: W) -> Self {
+impl <'a, W: BlockingWrite> JsonWriter<'a, W, PrettyFormatter, DefaultFloatFormat> {
+    pub fn new_pretty(inner: &'a mut W) -> Self {
         JsonWriter::new(inner, PrettyFormatter::new(), DefaultFloatFormat)
     }
 }
 
 
-struct FormatWrapper<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> {
-    inner: &'a mut JsonWriter<W, F, FF>,
+struct FormatWrapper<'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> {
+    inner: &'a mut JsonWriter<'b, W, F, FF>,
     cached_error: Option<W::Error>,
     pd: PhantomData<FF>,
 }
-impl<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> FormatWrapper<'a, W, F, FF> {
-    fn new(inner: &'a mut JsonWriter<W, F, FF>) -> Self {
+impl<'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> FormatWrapper<'a, 'b, W, F, FF> {
+    fn new(inner: &'a mut JsonWriter<'b, W, F, FF>) -> Self {
         Self {
             inner,
             cached_error: None,
@@ -207,7 +207,7 @@ impl<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> FormatWrapper<'a, 
         }
     }
 }
-impl<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> core::fmt::Write for FormatWrapper<'a, W, F, FF> {
+impl<'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> core::fmt::Write for FormatWrapper<'a, 'b, W, F, FF> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         match self.inner.write_bytes(s.as_bytes()) {
             Ok(_) => {
@@ -231,17 +231,17 @@ mod tests {
 
     #[test]
     fn test_json_writer() {
-        _test_json_writer(JsonWriter::new(Vec::new(), CompactFormatter, DefaultFloatFormat));
+        _test_json_writer(JsonWriter::new(&mut Vec::new(), CompactFormatter, DefaultFloatFormat));
     }
 
     #[test]
     fn test_json_writer_compact() {
-        _test_json_writer(JsonWriter::new_compact(Vec::new()));
+        _test_json_writer(JsonWriter::new_compact(&mut Vec::new()));
     }
 
     #[test]
     fn test_json_writer_pretty() {
-        _test_json_writer(JsonWriter::new_pretty(Vec::new()));
+        _test_json_writer(JsonWriter::new_pretty(&mut Vec::new()));
     }
 
     fn _test_json_writer<F: JsonFormatter>(mut writer: JsonWriter<Vec<u8>, F, DefaultFloatFormat>) {
@@ -256,7 +256,7 @@ mod tests {
 
     fn as_written_string<F: JsonFormatter>(writer: JsonWriter<Vec<u8>, F, DefaultFloatFormat>) -> String {
         let s = writer.into_inner().unwrap();
-        String::from_utf8(s).unwrap()
+        String::from_utf8(s.to_vec()).unwrap()
     }
 
     #[rstest]
@@ -304,7 +304,8 @@ mod tests {
     #[case::esc_1f("\x1f", r#""\u001f""#)]
     #[case::combination("asdf \n jklö \t!", r#""asdf \n jklö \t!""#)]
     fn test_write_escaped_string(#[case] s: &str, #[case] expected: &str) {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new_compact(&mut buf);
         writer.write_escaped_string(s).unwrap();
         assert_eq!(as_written_string(writer), expected);
     }
@@ -313,7 +314,8 @@ mod tests {
     #[case::bool_true(true, "true")]
     #[case::bool_false(false, "false")]
     fn test_write_bool(#[case] b: bool, #[case] expected: &str) {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new_compact(&mut buf);
         writer.write_bool(b).unwrap();
         assert_eq!(as_written_string(writer), expected);
     }
@@ -335,7 +337,8 @@ mod tests {
     #[case::neg_inf(f64::NEG_INFINITY, "null")]
     #[case::nan(f64::NAN, "null")]
     fn test_write_f64(#[case] value: f64, #[case] expected: &str) {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new_compact(&mut buf);
         writer.write_f64(value).unwrap();
         assert_eq!(as_written_string(writer), expected);
     }
@@ -357,14 +360,16 @@ mod tests {
     #[case::neg_inf(f32::NEG_INFINITY, "null")]
     #[case::nan(f32::NAN, "null")]
     fn test_write_f32(#[case] value: f32, #[case] expected: &str) {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new_compact(&mut buf);
         writer.write_f32(value).unwrap();
         assert_eq!(as_written_string(writer), expected);
     }
 
     #[test]
     fn test_set_reported_error() {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new_compact(&mut buf);
         writer.write_bytes(b"yo").unwrap();
 
         writer.set_unreported_error(io::Error::new(io::ErrorKind::Other, "something went wrong"));
@@ -394,16 +399,17 @@ mod tests {
             }
         }
 
-        let mut writer = JsonWriter::new(Vec::new(), CompactFormatter, OtherFf);
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new(&mut buf, CompactFormatter, OtherFf);
         writer.write_f64(1.2).unwrap();
         writer.write_f32(3.4).unwrap();
-        let written = writer.into_inner().unwrap();
-        assert_eq!(&written, b"_1.2_64_3.4_32");
+        assert_eq!(&buf, b"_1.2_64_3.4_32");
     }
 
     #[test]
     fn test_flush() {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new_compact(&mut buf);
         writer.write_bytes(b"yo").unwrap();
 
         writer.set_unreported_error(io::Error::new(io::ErrorKind::Other, "something went wrong"));

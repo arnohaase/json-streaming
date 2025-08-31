@@ -15,7 +15,8 @@
 //! use json_api::blocking::*;
 //!
 //! fn write_something() -> std::io::Result<()> {
-//!     let mut writer = JsonWriter::new_pretty(std::io::stdout());
+//!     let mut stdout = std::io::stdout();
+//!     let mut writer = JsonWriter::new_pretty(&mut stdout);
 //!     {
 //!         let mut o = JsonObject::new(&mut writer)?;
 //!         o.write_string_value("a", "hello")?;
@@ -107,7 +108,7 @@ mod tests {
     fn do_test_combined<F: JsonFormatter>(mut writer: JsonWriter<Vec<u8>, F, DefaultFloatFormat>, expected: &str) -> io::Result<()> {
         do_write_json(&mut JsonObject::new(&mut writer)?)?;
 
-        let s = writer.into_inner()?;
+        let s = writer.into_inner()?.to_vec();
         let s = String::from_utf8(s).unwrap();
 
         assert_eq!(s, expected);
@@ -116,14 +117,16 @@ mod tests {
 
     #[test]
     fn test_write_combined_compact() -> io::Result<()> {
-        do_test_combined(JsonWriter::new_compact(Vec::new()),
+        let mut buf = Vec::new();
+        do_test_combined(JsonWriter::new_compact(&mut buf),
             r#"{"abc":"yo","xyz":"yo","aaaa":["111","11",{},[],null,true,false,-23987,23987,23.235,null,null,23.235,null,null],"ooo":{"lll":"whatever","ar":[]}}"#
         )
     }
 
     #[test]
     fn test_write_combined_pretty() -> io::Result<()> {
-        do_test_combined(JsonWriter::new_pretty(Vec::new()),
+        let mut buf = Vec::new();
+        do_test_combined(JsonWriter::new_pretty(&mut buf),
             r#"{
   "abc": "yo",
   "xyz": "yo",

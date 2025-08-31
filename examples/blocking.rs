@@ -21,7 +21,7 @@ fn main() {
 ///   "favorite-colors": [ "red", "blue", "yellow" ]
 /// }
 /// ```
-fn write(out: impl io::Write) -> io::Result<()> {
+fn write(out: &mut impl io::Write) -> io::Result<()> {
     // The first step when writing JSON is to wrap the raw Write instance in a JsonWriter. The
     //  JsonWriter takes care of (among other things) formatting the output.    
     // For this example, we use the 'pretty' format that adds indentation for human readability.

@@ -14,15 +14,15 @@ use crate::shared::json_formatter::JsonFormatter;
 ///
 /// A typical use of the library is to create a [JsonWriter] and then wrap it in a top-level
 ///  [JsonObject] instance.
-pub struct JsonObject<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> {
-    writer: &'a mut JsonWriter<W, F, FF>,
+pub struct JsonObject<'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> {
+    writer: &'a mut JsonWriter<'b, W, F, FF>,
     is_initial: bool,
     is_ended: bool,
 }
-impl<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, W, F, FF> {
+impl<'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, 'b, W, F, FF> {
     /// Create a new [JsonObject] instance. Application code can do this explicitly only initially
     ///  as a starting point for writing JSON. Nested objects are created by the library.
-    pub fn new(writer: &'a mut JsonWriter<W, F, FF>) -> Result<Self, W::Error> {
+    pub fn new(writer: &'a mut JsonWriter<'b, W, F, FF>) -> Result<Self, W::Error> {
         writer.write_bytes(b"{")?;
         writer.write_format_after_start_nested()?;
         Ok(JsonObject {
@@ -84,16 +84,20 @@ impl<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, W, 
     ///  for writing elements to the nested object. When the returned [JsonObject] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested object is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub fn start_object(&mut self, key: &str) -> Result<JsonObject<'_, W, F, FF>, W::Error> {
+    pub fn start_object<'c, 'x>(&'x mut self, key: &str) -> Result<JsonObject<'c, 'b, W, F, FF>, W::Error>
+    where 'a: 'c, 'x: 'c
+    {
         self.write_key(key)?;
-        JsonObject::new(&mut self.writer)
+        JsonObject::new(self.writer)
     }
 
     /// Start a nested array under a given key. This function returns a new [JsonArray] instance
     ///  for writing elements to the nested object. When the returned [JsonArray] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested array is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub fn start_array(&mut self, key: &str) -> Result<JsonArray<'_, W, F, FF>, W::Error> {
+    pub fn start_array<'c, 'x>(&'x mut self, key: &str) -> Result<JsonArray<'c, 'b, W, F, FF>, W::Error>
+    where 'a: 'c, 'x: 'c
+    {
         self.write_key(key)?;
         JsonArray::new(self.writer)
     }
@@ -114,7 +118,7 @@ impl<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, W, 
 
 macro_rules! write_obj_int {
     ($t:ty ; $f:ident) => {
-impl<'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, W, F, FF> {
+impl<'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, 'b, W, F, FF> {
     /// Write a key/value pair with an int value of type $t.
     pub fn $f(&mut self, key: &str, value: $t) -> Result<(), W::Error> {
         self.write_key(key)?;
@@ -136,7 +140,7 @@ write_obj_int!(u128; write_u128_value);
 write_obj_int!(isize; write_isize_value);
 write_obj_int!(usize; write_usize_value);
 
-impl <'a, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> Drop for JsonObject<'a, W, F, FF> {
+impl <'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> Drop for JsonObject<'a, 'b, W, F, FF> {
     fn drop(&mut self) {
         if !self.is_ended {
             if let Err(e) = self._end() {
@@ -155,7 +159,7 @@ mod tests {
     use rstest::*;
     use std::io;
 
-    type OS<'a> = JsonObject<'a, Vec<u8>, CompactFormatter, DefaultFloatFormat>;
+    type OS<'a, 'b> = JsonObject<'a, 'b, Vec<u8>, CompactFormatter, DefaultFloatFormat>;
 
     #[rstest]
     #[case::empty(Box::new(|_ser: &mut OS| Ok(())), "{}")]
@@ -173,13 +177,14 @@ mod tests {
     #[case::nested_obj_last(Box::new(|ser: &mut OS| { ser.write_u32_value("j", 2)?; ser.start_object("k")?.end() }), r#"{"j":2,"k":{}}"#)]
     #[case::two_nested_objects(Box::new(|ser: &mut OS| { ser.start_object("l")?.end()?; ser.start_object("m")?.end() }), r#"{"l":{},"m":{}}"#)]
     fn test_object(#[case] code: Box<dyn Fn(&mut OS) -> io::Result<()>>, #[case] expected: &str) -> io::Result<()> {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new_compact(&mut buf);
         {
             let mut object_ser = JsonObject::new(&mut writer)?;
             code(&mut object_ser)?;
         }
 
-        let actual = String::from_utf8(writer.into_inner()?).unwrap();
+        let actual = String::from_utf8(writer.into_inner()?.to_vec()).unwrap();
         assert_eq!(actual, expected);
         Ok(())
     }
@@ -234,20 +239,22 @@ mod tests {
     #[case::f32_nan(Box::new(|w: &mut OS| w.write_f32_value("a", f32::NAN)), "null")]
     fn test_write_value(#[case] code: Box<dyn Fn(&mut OS) -> io::Result<()>>, #[case] expected: &str) -> io::Result<()> {
         {
-            let mut writer = JsonWriter::new_compact(Vec::new());
+            let mut buf = Vec::new();
+            let mut writer = JsonWriter::new_compact(&mut buf);
             {
                 let mut object_ser = JsonObject::new(&mut writer)?;
                 code(&mut object_ser)?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?).unwrap();
+            let actual = String::from_utf8(writer.into_inner()?.to_vec()).unwrap();
             let expected = format!(r#"{}"a":{}{}"#, "{", expected, "}");
             assert_eq!(actual, expected);
         }
 
         // test with and without preceding element to verify that 'initial' is handled correctly
         {
-            let mut writer = JsonWriter::new_compact(Vec::new());
+            let mut buf = Vec::new();
+            let mut writer = JsonWriter::new_compact(&mut buf);
             {
                 let mut object_ser = JsonObject::new(&mut writer)?;
                 object_ser.write_null_value("x")?;
@@ -255,7 +262,7 @@ mod tests {
                 object_ser.write_u32_value("y", 5)?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?).unwrap();
+            let actual = String::from_utf8(writer.into_inner()?.to_vec()).unwrap();
             let expected = format!(r#"{}"x":null,"a":{},"y":5{}"#, "{", expected, "}");
             assert_eq!(actual, expected);
         }
