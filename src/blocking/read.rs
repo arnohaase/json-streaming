@@ -6,7 +6,7 @@ use core::str::FromStr;
 //TODO documentation: tokenizer, no grammar check --> grammar checking wrapper?
 pub struct JsonReader<B: AsMut<[u8]>, R: BlockingRead> {
     inner: ReaderInner<B, R::Error>,
-    reader: R,
+    reader: R, //TODO &mut R
 }
 
 #[cfg(feature = "std")]

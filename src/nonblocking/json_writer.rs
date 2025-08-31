@@ -10,7 +10,7 @@ use core::marker::PhantomData;
 /// Application code should usually not have to interact with [JsonWriter] directly, but through
 ///  [ObjectSer] or [ArraySer] wrapped around it.
 pub struct JsonWriter <W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> {
-    inner: W,
+    inner: W, //TODO &mut W
     formatter: F,
     number_write_buf: NumWriteBuf,
     _float_format: FF,
