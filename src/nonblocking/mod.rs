@@ -26,7 +26,7 @@ mod tests {
     use crate::nonblocking::json_writer::JsonWriter;
     use crate::nonblocking::object::JsonObject;
 
-    async fn do_write_json<F: JsonFormatter>(o: &mut JsonObject<'_, Vec<u8>, F, DefaultFloatFormat>) -> io::Result<()> {
+    async fn do_write_json<F: JsonFormatter>(o: &mut JsonObject<'_, '_, Vec<u8>, F, DefaultFloatFormat>) -> io::Result<()> {
         o.write_string_value("abc", "yo").await?;
         o.write_string_value("xyz", "yo").await?;
 
@@ -57,12 +57,12 @@ mod tests {
         Ok(())
     }
 
-    async fn do_test_combined<F: JsonFormatter>(mut writer: JsonWriter<Vec<u8>, F, DefaultFloatFormat>, expected: &str) -> io::Result<()> {
+    async fn do_test_combined<F: JsonFormatter>(mut writer: JsonWriter<'_, Vec<u8>, F, DefaultFloatFormat>, expected: &str) -> io::Result<()> {
         let mut root = JsonObject::new(&mut writer).await?;
         do_write_json(&mut root).await?;
         root.end().await?;
 
-        let s = writer.into_inner()?;
+        let s = writer.into_inner()?.to_vec();
         let s = String::from_utf8(s).unwrap();
 
         assert_eq!(s, expected);
@@ -71,14 +71,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_combined_compact() -> io::Result<()> {
-        do_test_combined(JsonWriter::new_compact(Vec::new()),
+        do_test_combined(JsonWriter::new_compact(&mut Vec::new()),
                          r#"{"abc":"yo","xyz":"yo","aaaa":["111","11",{},[],null,true,false,-23987,23987,23.235,null,null,23.235,null,null],"ooo":{"lll":"whatever","ar":[]}}"#
         ).await
     }
 
     #[tokio::test]
     async fn test_write_combined_pretty() -> io::Result<()> {
-        do_test_combined(JsonWriter::new_pretty(Vec::new()),
+        do_test_combined(JsonWriter::new_pretty(&mut Vec::new()),
                          r#"{
   "abc": "yo",
   "xyz": "yo",

@@ -14,15 +14,15 @@ use crate::nonblocking::json_writer::JsonWriter;
 ///
 /// A typical use of the library is to create a [JsonWriter] and then wrap it in a top-level
 ///  [JsonObject] instance.
-pub struct JsonObject<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> {
-    writer: &'a mut JsonWriter<W, F, FF>,
+pub struct JsonObject<'a, 'b, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> {
+    writer: &'a mut JsonWriter<'b, W, F, FF>,
     is_initial: bool,
     is_ended: bool,
 }
-impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, W, F, FF> {
+impl<'a, 'b, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, 'b, W, F, FF> {
     /// Create a new [JsonObject] instance. Application code can do this explicitly only initially
     ///  as a starting point for writing JSON. Nested objects are created by the library.
-    pub async fn new(writer: &'a mut JsonWriter<W, F, FF>) -> Result<Self, W::Error> {
+    pub async fn new(writer: &'a mut JsonWriter<'b, W, F, FF>) -> Result<Self, W::Error> {
         writer.write_bytes(b"{").await?;
         writer.write_format_after_start_nested().await?;
         Ok(JsonObject {
@@ -84,7 +84,9 @@ impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, 
     ///  for writing elements to the nested object. When the returned [JsonObject] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested object is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub async fn start_object(&mut self, key: &str) -> Result<JsonObject<'_, W, F, FF>, W::Error> {
+    pub async fn start_object<'c, 'x>(&'x mut self, key: &str) -> Result<JsonObject<'c, 'b, W, F, FF>, W::Error>
+    where 'a: 'c, 'x: 'c
+    {
         self.write_key(key).await?;
         JsonObject::new(&mut self.writer).await
     }
@@ -93,7 +95,9 @@ impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, 
     ///  for writing elements to the nested object. When the returned [JsonArray] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested array is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub async fn start_array(&mut self, key: &str) -> Result<JsonArray<'_, W, F, FF>, W::Error> {
+    pub async fn start_array<'x, 'c>(&'x mut self, key: &str) -> Result<JsonArray<'c, 'b, W, F, FF>, W::Error>
+    where 'a: 'c, 'x: 'c
+    {
         self.write_key(key).await?;
         JsonArray::new(self.writer).await
     }
@@ -114,7 +118,7 @@ impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, 
 
 macro_rules! write_obj_int {
     ($t:ty ; $f:ident) => {
-impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, W, F, FF> {
+impl<'a, 'b, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<'a, 'b, W, F, FF> {
     /// Write a key/value pair with an int value of type $t.
     pub async fn $f(&mut self, key: &str, value: $t) -> Result<(), W::Error> {
         self.write_key(key).await?;
@@ -169,7 +173,7 @@ pub mod tests {
         Array(&'static str, Vec<ArrayCommand>)
     }
     impl ObjectCommand {
-        pub async fn apply(&self, obj: &mut JsonObject<'_, Vec<u8>, CompactFormatter, DefaultFloatFormat>) {
+        pub async fn apply(&self, obj: &mut JsonObject<'_, '_, Vec<u8>, CompactFormatter, DefaultFloatFormat>) {
             match self {
                 ObjectCommand::Null(key) => obj.write_null_value(key).await.unwrap(),
                 ObjectCommand::Bool(key, b) => obj.write_bool_value(key, *b).await.unwrap(),
@@ -206,7 +210,6 @@ pub mod tests {
         }
     }
 
-
     #[rstest]
     #[case::empty(vec![], "{}")]
     #[case::single(vec![ObjectCommand::Null("a")], r#"{"a":null}"#)]
@@ -224,7 +227,8 @@ pub mod tests {
     #[case::two_nested_objects(vec![ObjectCommand::Object("l", vec![]), ObjectCommand::Object("m", vec![])], r#"{"l":{},"m":{}}"#)]
     #[tokio::test]
     async fn test_object(#[case] cmds: Vec<ObjectCommand>, #[case] expected: &str) -> io::Result<()> {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new_compact(&mut buf);
         {
             let mut object_ser = JsonObject::new(&mut writer).await?;
             for cmd in cmds {
@@ -233,7 +237,7 @@ pub mod tests {
             object_ser.end().await?;
         }
 
-        let actual = String::from_utf8(writer.into_inner()?).unwrap();
+        let actual = String::from_utf8(buf).unwrap();
         assert_eq!(actual, expected);
         Ok(())
     }
@@ -290,21 +294,23 @@ pub mod tests {
     #[tokio::test]
     async fn test_write_value(#[case] cmd: ObjectCommand, #[case] expected: &str) -> io::Result<()> {
         {
-            let mut writer = JsonWriter::new_compact(Vec::new());
+            let mut buf = Vec::new();
+            let mut writer = JsonWriter::new_compact(&mut buf);
             {
                 let mut object_ser = JsonObject::new(&mut writer).await?;
                 cmd.apply(&mut object_ser).await;
                 object_ser.end().await?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?).unwrap();
+            let actual = String::from_utf8(buf).unwrap();
             let expected = format!(r#"{}"a":{}{}"#, "{", expected, "}");
             assert_eq!(actual, expected);
         }
 
         // test with and without preceding element to verify that 'initial' is handled correctly
         {
-            let mut writer = JsonWriter::new_compact(Vec::new());
+            let mut buf = Vec::new();
+            let mut writer = JsonWriter::new_compact(&mut buf);
             {
                 let mut object_ser = JsonObject::new(&mut writer).await?;
                 object_ser.write_null_value("x").await?;
@@ -313,7 +319,7 @@ pub mod tests {
                 object_ser.end().await?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?).unwrap();
+            let actual = String::from_utf8(buf).unwrap();
             let expected = format!(r#"{}"x":null,"a":{},"y":5{}"#, "{", expected, "}");
             assert_eq!(actual, expected);
         }

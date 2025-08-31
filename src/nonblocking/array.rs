@@ -14,16 +14,16 @@ use crate::nonblocking::object::JsonObject;
 ///
 /// A typical use of the library is to create a [JsonWriter] and then wrap it in a top-level 
 ///  [JsonArray] instance.
-pub struct JsonArray<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> {
-    writer: &'a mut JsonWriter<W, F, FF>,
+pub struct JsonArray<'a, 'b, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> {
+    writer: &'a mut JsonWriter<'b, W, F, FF>,
     is_initial: bool,
     is_ended: bool,
 }
 
-impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, W, F, FF> {
+impl<'a, 'b, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, 'b, W, F, FF> {
     /// Create a new [JsonArray] instance. Application code can do this explicitly only initially
     ///  as a starting point for writing JSON. Nested arrays are created by the library.
-    pub async fn new(writer: &'a mut JsonWriter<W, F, FF>) -> Result<Self, W::Error> {
+    pub async fn new(writer: &'a mut JsonWriter<'b, W, F, FF>) -> Result<Self, W::Error> {
         writer.write_bytes(b"[").await?;
         writer.write_format_after_start_nested().await?;
 
@@ -86,7 +86,9 @@ impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, W
     ///  for writing elements to the nested object. When the returned [JsonObject] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested object is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub async fn start_object(&mut self) -> Result<JsonObject<'_, W, F, FF>, W::Error> {
+    pub async fn start_object<'c, 'x>(&'x mut self) -> Result<JsonObject<'c, 'b, W, F, FF>, W::Error>
+    where 'a: 'c, 'x: 'c
+    {
         self.handle_initial().await?;
         JsonObject::new(self.writer).await
     }
@@ -95,7 +97,9 @@ impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, W
     ///  for writing elements to the nested object. When the returned [JsonArray] goes out of scope
     ///  (per syntactic scope or an explicit call to `end()`), the nested object is closed, and
     ///  application code can continue adding elements to the owning `self` object.
-    pub async fn start_array(&mut self) -> Result<JsonArray<'_, W, F, FF>, W::Error> {
+    pub async fn start_array<'c, 'x>(&'x mut self) -> Result<JsonArray<'c, 'b, W, F, FF>, W::Error>
+    where 'a: 'c, 'x: 'c
+    {
         self.handle_initial().await?;
         JsonArray::new(self.writer).await
     }
@@ -116,7 +120,7 @@ impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, W
 
 macro_rules! write_arr_int {
     ($t:ty ; $f:ident) => {
-impl<'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, W, F, FF> {
+impl<'a, 'b, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, 'b, W, F, FF> {
     /// Write an element with a generic int value. This function fits most Rust integral
     ///  types; for the exceptions, there are separate functions.
     pub async fn $f(&mut self, value: $t) -> Result<(), W::Error> {
@@ -173,7 +177,7 @@ pub mod tests {
         Array(Vec<ArrayCommand>)
     }
     impl ArrayCommand {
-        pub async fn apply(&self, arr: &mut JsonArray<'_, Vec<u8>, CompactFormatter, DefaultFloatFormat>) {
+        pub async fn apply(&self, arr: &mut JsonArray<'_, '_, Vec<u8>, CompactFormatter, DefaultFloatFormat>) {
             match self {
                 ArrayCommand::Null => arr.write_null_value().await.unwrap(),
                 ArrayCommand::Bool(b) => arr.write_bool_value(*b).await.unwrap(),
@@ -227,14 +231,15 @@ pub mod tests {
     #[case::two_nested_objects(vec![ArrayCommand::Object(vec![]), ArrayCommand::Object(vec![])], r#"[{},{}]"#)]
     #[tokio::test]
     async fn test_array(#[case] code: Vec<ArrayCommand>, #[case] expected: &str) -> io::Result<()> {
-        let mut writer = JsonWriter::new_compact(Vec::new());
+        let mut buf = Vec::new();
+        let mut writer = JsonWriter::new_compact(&mut buf);
         let mut array_ser = JsonArray::new(&mut writer).await?;
         for cmd in code {
             cmd.apply(&mut array_ser).await;
         }
         array_ser.end().await?;
 
-        let actual = String::from_utf8(writer.into_inner()?).unwrap();
+        let actual = String::from_utf8(buf).unwrap();
         assert_eq!(actual, expected);
         Ok(())
     }
@@ -290,21 +295,23 @@ pub mod tests {
     #[tokio::test]
     async fn test_write_value(#[case] cmd: ArrayCommand, #[case] expected: &str) -> io::Result<()> {
         {
-            let mut writer = JsonWriter::new_compact(Vec::new());
+            let mut buf = Vec::new();
+            let mut writer = JsonWriter::new_compact(&mut buf);
             {
                 let mut array_ser = JsonArray::new(&mut writer).await?;
                 cmd.apply(&mut array_ser).await;
                 array_ser.end().await?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?).unwrap();
+            let actual = String::from_utf8(buf).unwrap();
             let expected = format!("[{}]", expected);
             assert_eq!(actual, expected);
         }
 
         // test with and without preceding element to verify that 'initial' is handled correctly
         {
-            let mut writer = JsonWriter::new_compact(Vec::new());
+            let mut buf = Vec::new();
+            let mut writer = JsonWriter::new_compact(&mut buf);
             {
                 let mut array_ser = JsonArray::new(&mut writer).await?;
                 array_ser.write_null_value().await?;
@@ -312,7 +319,7 @@ pub mod tests {
                 array_ser.end().await?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?).unwrap();
+            let actual = String::from_utf8(buf).unwrap();
             let expected = format!("[null,{}]", expected);
             assert_eq!(actual, expected);
         }

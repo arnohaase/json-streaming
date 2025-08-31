@@ -23,9 +23,9 @@ fn main() {
 
 fn read(json_lines: String) -> JsonParseResult<(), io::Error> {
     let buf = json_lines.into_bytes();
-    let read = Cursor::new(buf);
+    let mut read = Cursor::new(buf);
 
-    let mut json_reader = JsonReader::new_with_lenient_comma_handling(1024, read);
+    let mut json_reader = JsonReader::new_with_lenient_comma_handling(1024, &mut read);
 
     while let JsonReadEvent::StartObject = json_reader.next()? {
         println!("start object");
