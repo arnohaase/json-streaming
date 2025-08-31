@@ -1,3 +1,16 @@
+//! Illustrate writing and reading the 'jsonlines' format (https://jsonlines.org), with a
+//!  JSON object per line without a wrapping JSON array or separating commas.
+//! 
+//! This format is sometimes used for streaming or sending large numbers of simple data, e.g.
+//!  log events.
+//! 
+//! While the json-streaming library has no explicit support for the 'jsonlines' format, it is
+//!  straightforward to read and write in a fully streaming fashion.
+//! * When writing, create a new top-level [JsonObject] for each line, and write the `\n` between
+//!    lines
+//! * When reading, use the [new_with_lenient_comma_handling] function to create the JsonReader to
+//!    skip the check for commas between the objects
+
 use json_api::blocking::{JsonObject, JsonReader, JsonWriter};
 use json_api::shared::read::{JsonParseError, JsonParseResult, JsonReadEvent};
 use std::io;

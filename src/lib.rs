@@ -11,5 +11,3 @@ pub mod shared;
 #[allow(dead_code)]
 pub mod nonblocking;
 
-
-//TODO examples
