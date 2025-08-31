@@ -12,7 +12,7 @@
 //!    skip the check for commas between the objects
 
 use json_api::blocking::{JsonObject, JsonReader, JsonWriter};
-use json_api::shared::read::{JsonParseError, JsonParseResult, JsonReadEvent};
+use json_api::shared::read::{JsonParseError, JsonParseResult, JsonReadToken};
 use std::io;
 use std::io::Cursor;
 
@@ -27,14 +27,14 @@ fn read(json_lines: String) -> JsonParseResult<(), io::Error> {
 
     let mut json_reader = JsonReader::new_with_lenient_comma_handling(1024, &mut read);
 
-    while let JsonReadEvent::StartObject = json_reader.next()? {
+    while let JsonReadToken::StartObject = json_reader.next()? {
         println!("start object");
         loop {
             match json_reader.next()? {
-                JsonReadEvent::Key("a") => println!("  a={:?}", json_reader.expect_next_string()?),
-                JsonReadEvent::Key("b") => println!("  b={:?}", json_reader.expect_next_number::<u32>()?),
-                JsonReadEvent::EndObject => break,
-                _ => return Err(JsonParseError::UnexpectedEvent(json_reader.location())),
+                JsonReadToken::Key("a") => println!("  a={:?}", json_reader.expect_next_string()?),
+                JsonReadToken::Key("b") => println!("  b={:?}", json_reader.expect_next_number::<u32>()?),
+                JsonReadToken::EndObject => break,
+                _ => return Err(JsonParseError::UnexpectedToken(json_reader.location())),
             }
         }
         println!("end object");

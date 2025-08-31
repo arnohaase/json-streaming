@@ -4,7 +4,7 @@ use core::str::{FromStr, Utf8Error};
 use core::marker::PhantomData;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum JsonReadEvent<'a> {
+pub enum JsonReadToken<'a> {
     StartObject,
     EndObject,
     StartArray,
@@ -67,7 +67,7 @@ pub enum JsonParseError<E: Error> {
     Io(E),
     Utf8(Utf8Error),
     Parse(&'static str, Location),
-    UnexpectedEvent(Location),
+    UnexpectedToken(Location),
     BufferOverflow(Location),
 }
 impl <E: Error> Display for JsonParseError<E> {
@@ -76,7 +76,7 @@ impl <E: Error> Display for JsonParseError<E> {
             JsonParseError::Io(err) => write!(f, "I/O error: {}", err),
             JsonParseError::Utf8(err) => write!(f, "Invalid UTF8: {}", err),
             JsonParseError::Parse(msg, location) => write!(f, "parse error: {} @ {}", msg, location),
-            JsonParseError::UnexpectedEvent(location) => write!(f, "unexpected event @ {}", location),
+            JsonParseError::UnexpectedToken(location) => write!(f, "unexpected event @ {}", location),
             JsonParseError::BufferOverflow(location) => write!(f, "buffer overflow @ {}", location),
         }
     }

@@ -29,12 +29,12 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
-    pub async fn next(&mut self) -> JsonParseResult<JsonReadEvent<'_>, R::Error> {
+    pub async fn next(&mut self) -> JsonParseResult<JsonReadToken<'_>, R::Error> {
         self.consume_whitespace().await?;
 
         match self.read_next_byte().await? {
             None => {
-                Ok(JsonReadEvent::EndOfStream)
+                Ok(JsonReadToken::EndOfStream)
             },
             Some(b',') => {
                 self.inner.on_comma()?;
@@ -43,22 +43,22 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
             Some(b'{') => {
                 self.inner.ensure_accept_value()?;
                 self.inner.state = ReaderState::Initial;
-                Ok(JsonReadEvent::StartObject)
+                Ok(JsonReadToken::StartObject)
             },
             Some(b'}') => {
                 self.inner.ensure_accept_end_nested()?;
                 self.inner.state = ReaderState::AfterValue;
-                Ok(JsonReadEvent::EndObject)
+                Ok(JsonReadToken::EndObject)
             },
             Some(b'[') => {
                 self.inner.ensure_accept_value()?;
                 self.inner.state = ReaderState::Initial;
-                Ok(JsonReadEvent::StartArray)
+                Ok(JsonReadToken::StartArray)
             },
             Some(b']') => {
                 self.inner.ensure_accept_end_nested()?;
                 self.inner.state = ReaderState::AfterValue;
-                Ok(JsonReadEvent::EndArray)
+                Ok(JsonReadToken::EndArray)
             },
 
             Some(b'n') => {
@@ -89,38 +89,50 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let location = self.location();
         let next = self.next().await?;
         match next {
-            JsonReadEvent::Key(key) => Ok(Some(key)),
-            JsonReadEvent::EndObject => Ok(None),
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            JsonReadToken::Key(key) => Ok(Some(key)),
+            JsonReadToken::EndObject => Ok(None),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
+        }
+    }
+
+    //TODO unit test
+    pub async fn expect_next_raw_number(&mut self) -> JsonParseResult<JsonNumber<'_>, R::Error> {
+        let location = self.location();
+        let next = self.next().await?;
+        match next {
+            JsonReadToken::NumberLiteral(n) => Ok(n),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
+        }
+    }
+
+    //TODO unit test
+    pub async fn expect_next_opt_raw_number(&mut self) -> JsonParseResult<Option<JsonNumber<'_>>, R::Error> {
+        let location = self.location();
+        let next = self.next().await?;
+        match next {
+            JsonReadToken::NullLiteral => Ok(None),
+            JsonReadToken::NumberLiteral(n) => Ok(Some(n)),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
         }
     }
 
     pub async fn expect_next_number<T: FromStr>(&mut self) -> JsonParseResult<T, R::Error> {
-        let location = self.location();
-        let next = self.next().await?;
-        match next {
-            JsonReadEvent::NumberLiteral(n) => {
-                match n.parse::<T>() {
-                    Ok(n) => Ok(n),
-                    Err(_) => self.inner.parse_err("invalid number"),
-                }
-            },
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+        match self.expect_next_raw_number().await?.parse::<T>() {
+            Ok(n) => Ok(n),
+            Err(_) => self.inner.parse_err("invalid number"),
         }
     }
 
     pub async fn expect_next_opt_number<T: FromStr>(&mut self) -> JsonParseResult<Option<T>, R::Error> {
-        let location = self.location();
-        let next = self.next().await?;
-        match next {
-            JsonReadEvent::NullLiteral => Ok(None),
-            JsonReadEvent::NumberLiteral(n) => {
+        match self.expect_next_opt_raw_number().await {
+            Ok(None) => Ok(None),
+            Ok(Some(n)) => {
                 match n.parse::<T>() {
                     Ok(n) => Ok(Some(n)),
                     Err(_) => self.inner.parse_err("invalid number"),
                 }
             },
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            Err(err) => Err(err),
         }
     }
 
@@ -128,8 +140,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let location = self.location();
         let next = self.next().await?;
         match next {
-            JsonReadEvent::StringLiteral(s) => Ok(s),
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            JsonReadToken::StringLiteral(s) => Ok(s),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
         }
     }
 
@@ -137,9 +149,9 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let location = self.location();
         let next = self.next().await?;
         match next {
-            JsonReadEvent::NullLiteral => Ok(None),
-            JsonReadEvent::StringLiteral(s) => Ok(Some(s)),
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            JsonReadToken::NullLiteral => Ok(None),
+            JsonReadToken::StringLiteral(s) => Ok(Some(s)),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
         }
     }
 
@@ -147,8 +159,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let location = self.location();
         let next = self.next().await?;
         match next {
-            JsonReadEvent::BooleanLiteral(b) => Ok(b),
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            JsonReadToken::BooleanLiteral(b) => Ok(b),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
         }
     }
 
@@ -156,9 +168,9 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let location = self.location();
         let next = self.next().await?;
         match next {
-            JsonReadEvent::NullLiteral => Ok(None),
-            JsonReadEvent::BooleanLiteral(b) => Ok(Some(b)),
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            JsonReadToken::NullLiteral => Ok(None),
+            JsonReadToken::BooleanLiteral(b) => Ok(Some(b)),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
         }
     }
 
@@ -166,8 +178,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let location = self.location();
         let next = self.next().await?;
         match next {
-            JsonReadEvent::StartObject => Ok(()),
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            JsonReadToken::StartObject => Ok(()),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
         }
     }
 
@@ -175,9 +187,9 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let location = self.location();
         let next = self.next().await?;
         match next {
-            JsonReadEvent::NullLiteral => Ok(None),
-            JsonReadEvent::StartObject => Ok(Some(())),
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            JsonReadToken::NullLiteral => Ok(None),
+            JsonReadToken::StartObject => Ok(Some(())),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
         }
     }
 
@@ -185,8 +197,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let location = self.location();
         let next = self.next().await?;
         match next {
-            JsonReadEvent::StartArray => Ok(()),
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            JsonReadToken::StartArray => Ok(()),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
         }
     }
 
@@ -194,9 +206,9 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let location = self.location();
         let next = self.next().await?;
         match next {
-            JsonReadEvent::NullLiteral => Ok(None),
-            JsonReadEvent::StartArray => Ok(Some(())),
-            _ => Err(JsonParseError::UnexpectedEvent(location)),
+            JsonReadToken::NullLiteral => Ok(None),
+            JsonReadToken::StartArray => Ok(Some(())),
+            _ => Err(JsonParseError::UnexpectedToken(location)),
         }
     }
 
@@ -230,7 +242,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
-    async fn consume_null_literal(&mut self) -> JsonParseResult<JsonReadEvent<'_>, R::Error> {
+    async fn consume_null_literal(&mut self) -> JsonParseResult<JsonReadToken<'_>, R::Error> {
         if self.read_next_byte().await? != Some(b'u') {
             return self.inner.parse_err("incomplete null literal");
         }
@@ -240,10 +252,10 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         if self.read_next_byte().await? != Some(b'l') {
             return self.inner.parse_err("incomplete null literal");
         }
-        Ok(JsonReadEvent::NullLiteral)
+        Ok(JsonReadToken::NullLiteral)
     }
 
-    async fn consume_true_literal(&mut self) -> JsonParseResult<JsonReadEvent<'_>, R::Error> {
+    async fn consume_true_literal(&mut self) -> JsonParseResult<JsonReadToken<'_>, R::Error> {
         if self.read_next_byte().await? != Some(b'r') {
             return self.inner.parse_err("incomplete true literal");
         }
@@ -253,10 +265,10 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         if self.read_next_byte().await? != Some(b'e') {
             return self.inner.parse_err("incomplete true literal");
         }
-        Ok(JsonReadEvent::BooleanLiteral(true))
+        Ok(JsonReadToken::BooleanLiteral(true))
     }
 
-    async fn consume_false_literal(&mut self) -> JsonParseResult<JsonReadEvent<'_>, R::Error> {
+    async fn consume_false_literal(&mut self) -> JsonParseResult<JsonReadToken<'_>, R::Error> {
         if self.read_next_byte().await? != Some(b'a') {
             return self.inner.parse_err("incomplete false literal");
         }
@@ -269,10 +281,10 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         if self.read_next_byte().await? != Some(b'e') {
             return self.inner.parse_err("incomplete false literal");
         }
-        Ok(JsonReadEvent::BooleanLiteral(false))
+        Ok(JsonReadToken::BooleanLiteral(false))
     }
 
-    async fn parse_after_quote(&mut self) -> JsonParseResult<JsonReadEvent<'_>, R::Error> {
+    async fn parse_after_quote(&mut self) -> JsonParseResult<JsonReadToken<'_>, R::Error> {
         self.inner.ind_end_buf = 0;
 
         loop {
@@ -324,12 +336,12 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
                         return self.inner.parse_err("missing comma");
                     }
                 }
-                Ok(JsonReadEvent::Key(self.inner.buf_as_str()?))
+                Ok(JsonReadToken::Key(self.inner.buf_as_str()?))
             },
             other => {
                 self.inner.state_change_for_value()?;
                 self.inner.parked_next = other;
-                Ok(JsonReadEvent::StringLiteral(self.inner.buf_as_str()?))
+                Ok(JsonReadToken::StringLiteral(self.inner.buf_as_str()?))
             }
         }
     }
@@ -356,7 +368,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         Ok(cp)
     }
 
-    async fn parse_number_literal(&mut self, b: u8) -> JsonParseResult<JsonReadEvent<'_>, R::Error> {
+    async fn parse_number_literal(&mut self, b: u8) -> JsonParseResult<JsonReadToken<'_>, R::Error> {
         self.inner.buf.as_mut()[0] = b;
         self.inner.ind_end_buf = 1;
 
@@ -373,7 +385,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
                 }
             }
         }
-        Ok(JsonReadEvent::NumberLiteral(JsonNumber(self.inner.buf_as_str()?)))
+        Ok(JsonReadToken::NumberLiteral(JsonNumber(self.inner.buf_as_str()?)))
     }
 
     #[inline]
@@ -408,8 +420,8 @@ mod tests {
                     return;
                 }
             }
-            JsonParseError::UnexpectedEvent(_) => {
-                if let JsonParseError::UnexpectedEvent(_) = expected {
+            JsonParseError::UnexpectedToken(_) => {
+                if let JsonParseError::UnexpectedToken(_) = expected {
                     return;
                 }
             }
@@ -425,53 +437,53 @@ mod tests {
 
     #[rstest]
     #[case::empty("", vec![], None)]
-    #[case::empty_repeated_end_of_stream("", vec![JsonReadEvent::EndOfStream, JsonReadEvent::EndOfStream, JsonReadEvent::EndOfStream, ], None)]
+    #[case::empty_repeated_end_of_stream("", vec![JsonReadToken::EndOfStream, JsonReadToken::EndOfStream, JsonReadToken::EndOfStream, ], None)]
 
-    #[case::null_literal("null", vec![JsonReadEvent::NullLiteral], None)]
-    #[case::true_literal("true", vec![JsonReadEvent::BooleanLiteral(true)], None)]
-    #[case::false_literal("false", vec![JsonReadEvent::BooleanLiteral(false)], None)]
-    #[case::start_object("{", vec![JsonReadEvent::StartObject], None)]
-    #[case::end_object("{}", vec![JsonReadEvent::StartObject, JsonReadEvent::EndObject], None)]
-    #[case::start_array("[", vec![JsonReadEvent::StartArray], None)]
-    #[case::end_array("[]", vec![JsonReadEvent::StartArray, JsonReadEvent::EndArray], None)]
+    #[case::null_literal("null", vec![JsonReadToken::NullLiteral], None)]
+    #[case::true_literal("true", vec![JsonReadToken::BooleanLiteral(true)], None)]
+    #[case::false_literal("false", vec![JsonReadToken::BooleanLiteral(false)], None)]
+    #[case::start_object("{", vec![JsonReadToken::StartObject], None)]
+    #[case::end_object("{}", vec![JsonReadToken::StartObject, JsonReadToken::EndObject], None)]
+    #[case::start_array("[", vec![JsonReadToken::StartArray], None)]
+    #[case::end_array("[]", vec![JsonReadToken::StartArray, JsonReadToken::EndArray], None)]
 
-    #[case::key("\"xyz\":", vec![JsonReadEvent::Key("xyz")], None)]
-    #[case::key_with_escapes("\"x\\ry\\nz\":", vec![JsonReadEvent::Key("x\ry\nz")], None)]
-    #[case::key_ws("\"xyz\" \n:", vec![JsonReadEvent::Key("xyz")], None)]
-    #[case::key_value("\"xyz\" \n:\r\tfalse", vec![JsonReadEvent::Key("xyz"), JsonReadEvent::BooleanLiteral(false)], None)]
+    #[case::key("\"xyz\":", vec![JsonReadToken::Key("xyz")], None)]
+    #[case::key_with_escapes("\"x\\ry\\nz\":", vec![JsonReadToken::Key("x\ry\nz")], None)]
+    #[case::key_ws("\"xyz\" \n:", vec![JsonReadToken::Key("xyz")], None)]
+    #[case::key_value("\"xyz\" \n:\r\tfalse", vec![JsonReadToken::Key("xyz"), JsonReadToken::BooleanLiteral(false)], None)]
 
-    #[case::string_literal(r#""abc""#, vec![JsonReadEvent::StringLiteral("abc")], None)]
-    #[case::string_literal_empty(r#""""#, vec![JsonReadEvent::StringLiteral("")], None)]
-    #[case::string_literal_quot(r#""\"""#, vec![JsonReadEvent::StringLiteral("\"")], None)]
-    #[case::string_literal_backslash(r#""\\""#, vec![JsonReadEvent::StringLiteral("\\")], None)]
-    #[case::string_literal_slash(r#""\/""#, vec![JsonReadEvent::StringLiteral("/")], None)]
-    #[case::string_literal_backslash(r#""\b""#, vec![JsonReadEvent::StringLiteral("\x08")], None)]
-    #[case::string_literal_formfeed(r#""\f""#, vec![JsonReadEvent::StringLiteral("\x0c")], None)]
-    #[case::string_literal_linefeed(r#""\n""#, vec![JsonReadEvent::StringLiteral("\n")], None)]
-    #[case::string_literal_carriage_return(r#""\r""#, vec![JsonReadEvent::StringLiteral("\r")], None)]
-    #[case::string_literal_tab(r#""\t""#, vec![JsonReadEvent::StringLiteral("\t")], None)]
-    #[case::string_literal_unicode_y(r#""\u0079""#, vec![JsonReadEvent::StringLiteral("y")], None)]
-    #[case::string_literal_unicode_umlaut_two_bytes(r#""\u00e4""#, vec![JsonReadEvent::StringLiteral("ä")], None)]
-    #[case::string_literal_unicode_omega_two_bytes(r#""\u03a9""#, vec![JsonReadEvent::StringLiteral("Ω")], None)]
-    #[case::string_literal_unicode_euro_three_bytes(r#""\u20ac""#, vec![JsonReadEvent::StringLiteral("€")], None)]
-    #[case::string_literal_combined(r#""a\n b\t \u00e4öü \u03a9 12.2\u20ac""#, vec![JsonReadEvent::StringLiteral("a\n b\t äöü Ω 12.2€")], None)]
+    #[case::string_literal(r#""abc""#, vec![JsonReadToken::StringLiteral("abc")], None)]
+    #[case::string_literal_empty(r#""""#, vec![JsonReadToken::StringLiteral("")], None)]
+    #[case::string_literal_quot(r#""\"""#, vec![JsonReadToken::StringLiteral("\"")], None)]
+    #[case::string_literal_backslash(r#""\\""#, vec![JsonReadToken::StringLiteral("\\")], None)]
+    #[case::string_literal_slash(r#""\/""#, vec![JsonReadToken::StringLiteral("/")], None)]
+    #[case::string_literal_backslash(r#""\b""#, vec![JsonReadToken::StringLiteral("\x08")], None)]
+    #[case::string_literal_formfeed(r#""\f""#, vec![JsonReadToken::StringLiteral("\x0c")], None)]
+    #[case::string_literal_linefeed(r#""\n""#, vec![JsonReadToken::StringLiteral("\n")], None)]
+    #[case::string_literal_carriage_return(r#""\r""#, vec![JsonReadToken::StringLiteral("\r")], None)]
+    #[case::string_literal_tab(r#""\t""#, vec![JsonReadToken::StringLiteral("\t")], None)]
+    #[case::string_literal_unicode_y(r#""\u0079""#, vec![JsonReadToken::StringLiteral("y")], None)]
+    #[case::string_literal_unicode_umlaut_two_bytes(r#""\u00e4""#, vec![JsonReadToken::StringLiteral("ä")], None)]
+    #[case::string_literal_unicode_omega_two_bytes(r#""\u03a9""#, vec![JsonReadToken::StringLiteral("Ω")], None)]
+    #[case::string_literal_unicode_euro_three_bytes(r#""\u20ac""#, vec![JsonReadToken::StringLiteral("€")], None)]
+    #[case::string_literal_combined(r#""a\n b\t \u00e4öü \u03a9 12.2\u20ac""#, vec![JsonReadToken::StringLiteral("a\n b\t äöü Ω 12.2€")], None)]
 
-    #[case::number_literal("123", vec![JsonReadEvent::NumberLiteral(JsonNumber("123"))], None)]
-    #[case::number_literal_negative("-456", vec![JsonReadEvent::NumberLiteral(JsonNumber("-456"))], None)]
-    #[case::number_literal_zero("0", vec![JsonReadEvent::NumberLiteral(JsonNumber("0"))], None)]
-    #[case::number_literal_fraction("0.92", vec![JsonReadEvent::NumberLiteral(JsonNumber("0.92"))], None)]
-    #[case::number_literal_fraction_small("0.0000000000000092", vec![JsonReadEvent::NumberLiteral(JsonNumber("0.0000000000000092"))], None)]
-    #[case::number_literal_fraction_neg("-0.0000000000000092", vec![JsonReadEvent::NumberLiteral(JsonNumber("-0.0000000000000092"))], None)]
-    #[case::number_literal_exp_lower("0.92e4", vec![JsonReadEvent::NumberLiteral(JsonNumber("0.92e4"))], None)]
-    #[case::number_literal_exp_upper("0.92E6", vec![JsonReadEvent::NumberLiteral(JsonNumber("0.92E6"))], None)]
-    #[case::number_literal_pos_exp_lower("0.92e+4", vec![JsonReadEvent::NumberLiteral(JsonNumber("0.92e+4"))], None)]
-    #[case::number_literal_pos_exp_upper("0.92E+6", vec![JsonReadEvent::NumberLiteral(JsonNumber("0.92E+6"))], None)]
-    #[case::number_literal_neg_exp_lower("0.92e-4", vec![JsonReadEvent::NumberLiteral(JsonNumber("0.92e-4"))], None)]
-    #[case::number_literal_neg_exp_upper("0.92E-6", vec![JsonReadEvent::NumberLiteral(JsonNumber("0.92E-6"))], None)]
+    #[case::number_literal("123", vec![JsonReadToken::NumberLiteral(JsonNumber("123"))], None)]
+    #[case::number_literal_negative("-456", vec![JsonReadToken::NumberLiteral(JsonNumber("-456"))], None)]
+    #[case::number_literal_zero("0", vec![JsonReadToken::NumberLiteral(JsonNumber("0"))], None)]
+    #[case::number_literal_fraction("0.92", vec![JsonReadToken::NumberLiteral(JsonNumber("0.92"))], None)]
+    #[case::number_literal_fraction_small("0.0000000000000092", vec![JsonReadToken::NumberLiteral(JsonNumber("0.0000000000000092"))], None)]
+    #[case::number_literal_fraction_neg("-0.0000000000000092", vec![JsonReadToken::NumberLiteral(JsonNumber("-0.0000000000000092"))], None)]
+    #[case::number_literal_exp_lower("0.92e4", vec![JsonReadToken::NumberLiteral(JsonNumber("0.92e4"))], None)]
+    #[case::number_literal_exp_upper("0.92E6", vec![JsonReadToken::NumberLiteral(JsonNumber("0.92E6"))], None)]
+    #[case::number_literal_pos_exp_lower("0.92e+4", vec![JsonReadToken::NumberLiteral(JsonNumber("0.92e+4"))], None)]
+    #[case::number_literal_pos_exp_upper("0.92E+6", vec![JsonReadToken::NumberLiteral(JsonNumber("0.92E+6"))], None)]
+    #[case::number_literal_neg_exp_lower("0.92e-4", vec![JsonReadToken::NumberLiteral(JsonNumber("0.92e-4"))], None)]
+    #[case::number_literal_neg_exp_upper("0.92E-6", vec![JsonReadToken::NumberLiteral(JsonNumber("0.92E-6"))], None)]
 
     #[case::number_literal_no_leading_zero(".1", vec![], Some(JsonParseError::Parse("invalid JSON literal", Location::start())))]
     #[case::no_matching_literal("x", vec![], Some(JsonParseError::Parse("invalid JSON literal", Location::start())))]
-    #[case::invalid_number_continuation("1x", vec![JsonReadEvent::NumberLiteral(JsonNumber("1"))], Some(JsonParseError::Parse("missing comma", Location::start())))]
+    #[case::invalid_number_continuation("1x", vec![JsonReadToken::NumberLiteral(JsonNumber("1"))], Some(JsonParseError::Parse("missing comma", Location::start())))]
     #[case::invalid_number_continuation_quote("x\"", vec![], Some(JsonParseError::Parse("invalid JSON literal", Location::start())))]
 
     #[case::string_literal_unterminated_short(r#""abc "#, vec![], Some(JsonParseError::Parse("unterminated string literal", Location::start())))]
@@ -483,9 +495,9 @@ mod tests {
     #[case::string_literal_unicode_invalid_character_3(r#""\u00x1""#, vec![], Some(JsonParseError::Parse("not a four-digit hex number after \\u", Location::start())))]
     #[case::string_literal_unicode_invalid_character_4(r#""\u004x""#, vec![], Some(JsonParseError::Parse("not a four-digit hex number after \\u", Location::start())))]
     #[case::string_literal_unicode_uppercase_u(r#""\U0041""#, vec![], Some(JsonParseError::Parse("invalid escape in string literal", Location::start())))]
-    #[case::string_literal_unicode_uppercase(r#""\uABCD""#, vec![JsonReadEvent::StringLiteral("\u{abcd}")], None)]
-    #[case::string_literal_unicode_mixed_case_1(r#""\uaBcD""#, vec![JsonReadEvent::StringLiteral("\u{abcd}")], None)]
-    #[case::string_literal_unicode_mixed_case_2(r#""\uAbCd""#, vec![JsonReadEvent::StringLiteral("\u{abcd}")], None)]
+    #[case::string_literal_unicode_uppercase(r#""\uABCD""#, vec![JsonReadToken::StringLiteral("\u{abcd}")], None)]
+    #[case::string_literal_unicode_mixed_case_1(r#""\uaBcD""#, vec![JsonReadToken::StringLiteral("\u{abcd}")], None)]
+    #[case::string_literal_unicode_mixed_case_2(r#""\uAbCd""#, vec![JsonReadToken::StringLiteral("\u{abcd}")], None)]
 
     #[case::null_wrong_continuation_1("nul", vec![], Some(JsonParseError::Parse("incomplete null literal", Location::start())))]
     #[case::null_wrong_continuation_2("nxll", vec![], Some(JsonParseError::Parse("incomplete null literal", Location::start())))]
@@ -519,84 +531,84 @@ mod tests {
     #[case::false_uppercase_1("False", vec![], Some(JsonParseError::Parse("invalid JSON literal", Location::start())))]
     #[case::false_uppercase_2("FALSE", vec![], Some(JsonParseError::Parse("invalid JSON literal", Location::start())))]
 
-    #[case::object_end_just_comma(r#"{, }"#, vec![JsonReadEvent::StartObject], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
-    #[case::object_end_trailing_comma(r#"{"a": null, }"#, vec![JsonReadEvent::StartObject, JsonReadEvent::Key("a"), JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("trailing comma", Location::start())))]
-    #[case::object_end_after_key(r#"{"a": }"#, vec![JsonReadEvent::StartObject, JsonReadEvent::Key("a")], Some(JsonParseError::Parse("key without a value", Location::start())))]
-    #[case::array_end_just_comma(r#"[, ]"#, vec![JsonReadEvent::StartArray], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
-    #[case::array_end_trailing_comma(r#"[null, ]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("trailing comma", Location::start())))]
-    #[case::array_end_after_key(r#"["a": ]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::Key("a")], Some(JsonParseError::Parse("key without a value", Location::start())))]
+    #[case::object_end_just_comma(r#"{, }"#, vec![JsonReadToken::StartObject], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
+    #[case::object_end_trailing_comma(r#"{"a": null, }"#, vec![JsonReadToken::StartObject, JsonReadToken::Key("a"), JsonReadToken::NullLiteral], Some(JsonParseError::Parse("trailing comma", Location::start())))]
+    #[case::object_end_after_key(r#"{"a": }"#, vec![JsonReadToken::StartObject, JsonReadToken::Key("a")], Some(JsonParseError::Parse("key without a value", Location::start())))]
+    #[case::array_end_just_comma(r#"[, ]"#, vec![JsonReadToken::StartArray], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
+    #[case::array_end_trailing_comma(r#"[null, ]"#, vec![JsonReadToken::StartArray, JsonReadToken::NullLiteral], Some(JsonParseError::Parse("trailing comma", Location::start())))]
+    #[case::array_end_after_key(r#"["a": ]"#, vec![JsonReadToken::StartArray, JsonReadToken::Key("a")], Some(JsonParseError::Parse("key without a value", Location::start())))]
 
-    #[case::missing_comma_null(r#"[null null]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
-    #[case::missing_comma_true(r#"[null true]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
-    #[case::missing_comma_false(r#"[null false]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
-    #[case::missing_comma_number(r#"[null 123]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
-    #[case::missing_comma_string(r#"[null "abc"]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
-    #[case::missing_comma_object(r#"[null {}]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
-    #[case::missing_comma_array(r#"[null []]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
-    #[case::missing_comma_key(r#"{"a": null "b": 1}"#, vec![JsonReadEvent::StartObject, JsonReadEvent::Key("a"), JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
-    #[case::key_after_key(r#"{"a": "b": 1}"#, vec![JsonReadEvent::StartObject, JsonReadEvent::Key("a")], Some(JsonParseError::Parse("two keys without value", Location::start())))]
-    #[case::comma_after_key(r#"{"a": , "b": 1}"#, vec![JsonReadEvent::StartObject, JsonReadEvent::Key("a")], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
+    #[case::missing_comma_null(r#"[null null]"#, vec![JsonReadToken::StartArray, JsonReadToken::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
+    #[case::missing_comma_true(r#"[null true]"#, vec![JsonReadToken::StartArray, JsonReadToken::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
+    #[case::missing_comma_false(r#"[null false]"#, vec![JsonReadToken::StartArray, JsonReadToken::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
+    #[case::missing_comma_number(r#"[null 123]"#, vec![JsonReadToken::StartArray, JsonReadToken::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
+    #[case::missing_comma_string(r#"[null "abc"]"#, vec![JsonReadToken::StartArray, JsonReadToken::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
+    #[case::missing_comma_object(r#"[null {}]"#, vec![JsonReadToken::StartArray, JsonReadToken::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
+    #[case::missing_comma_array(r#"[null []]"#, vec![JsonReadToken::StartArray, JsonReadToken::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
+    #[case::missing_comma_key(r#"{"a": null "b": 1}"#, vec![JsonReadToken::StartObject, JsonReadToken::Key("a"), JsonReadToken::NullLiteral], Some(JsonParseError::Parse("missing comma", Location::start())))]
+    #[case::key_after_key(r#"{"a": "b": 1}"#, vec![JsonReadToken::StartObject, JsonReadToken::Key("a")], Some(JsonParseError::Parse("two keys without value", Location::start())))]
+    #[case::comma_after_key(r#"{"a": , "b": 1}"#, vec![JsonReadToken::StartObject, JsonReadToken::Key("a")], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
 
-    #[case::object_comma_after_comma(r#"{"a": null, ,}"#, vec![JsonReadEvent::StartObject, JsonReadEvent::Key("a"), JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
-    #[case::array_comma_after_comma(r#"[ null, ,]"#, vec![JsonReadEvent::StartArray, JsonReadEvent::NullLiteral], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
+    #[case::object_comma_after_comma(r#"{"a": null, ,}"#, vec![JsonReadToken::StartObject, JsonReadToken::Key("a"), JsonReadToken::NullLiteral], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
+    #[case::array_comma_after_comma(r#"[ null, ,]"#, vec![JsonReadToken::StartArray, JsonReadToken::NullLiteral], Some(JsonParseError::Parse("unexpected comma", Location::start())))]
 
     #[case::object(r#"{ "a": 1, "b": true, "c": "xyz" }"#, vec![
-        JsonReadEvent::StartObject,
-        JsonReadEvent::Key("a"),
-        JsonReadEvent::NumberLiteral(JsonNumber("1")),
-        JsonReadEvent::Key("b"),
-        JsonReadEvent::BooleanLiteral(true),
-        JsonReadEvent::Key("c"),
-        JsonReadEvent::StringLiteral("xyz"),
-        JsonReadEvent::EndObject,
+        JsonReadToken::StartObject,
+        JsonReadToken::Key("a"),
+        JsonReadToken::NumberLiteral(JsonNumber("1")),
+        JsonReadToken::Key("b"),
+        JsonReadToken::BooleanLiteral(true),
+        JsonReadToken::Key("c"),
+        JsonReadToken::StringLiteral("xyz"),
+        JsonReadToken::EndObject,
     ], None)]
     #[case::array(r#"[ 6, "xy", true, null ]"#, vec![
-        JsonReadEvent::StartArray,
-        JsonReadEvent::NumberLiteral(JsonNumber("6")),
-        JsonReadEvent::StringLiteral("xy"),
-        JsonReadEvent::BooleanLiteral(true),
-        JsonReadEvent::NullLiteral,
-        JsonReadEvent::EndArray,
+        JsonReadToken::StartArray,
+        JsonReadToken::NumberLiteral(JsonNumber("6")),
+        JsonReadToken::StringLiteral("xy"),
+        JsonReadToken::BooleanLiteral(true),
+        JsonReadToken::NullLiteral,
+        JsonReadToken::EndArray,
     ], None)]
     #[case::complex(r#"{"abc":"yo","xyz":"yo","aaaa":["111","11",{},[],null,true,false,-23987,23987,23.235,null,null,23.235e-1,null,null],"ooo":{"lll":"whatever","ar":[]}}"#, vec![
-        JsonReadEvent::StartObject,
-        JsonReadEvent::Key("abc"),
-        JsonReadEvent::StringLiteral("yo"),
-        JsonReadEvent::Key("xyz"),
-        JsonReadEvent::StringLiteral("yo"),
-        JsonReadEvent::Key("aaaa"),
-        JsonReadEvent::StartArray,
-        JsonReadEvent::StringLiteral("111"),
-        JsonReadEvent::StringLiteral("11"),
-        JsonReadEvent::StartObject,
-        JsonReadEvent::EndObject,
-        JsonReadEvent::StartArray,
-        JsonReadEvent::EndArray,
-        JsonReadEvent::NullLiteral,
-        JsonReadEvent::BooleanLiteral(true),
-        JsonReadEvent::BooleanLiteral(false),
-        JsonReadEvent::NumberLiteral(JsonNumber("-23987")),
-        JsonReadEvent::NumberLiteral(JsonNumber("23987")),
-        JsonReadEvent::NumberLiteral(JsonNumber("23.235")),
-        JsonReadEvent::NullLiteral,
-        JsonReadEvent::NullLiteral,
-        JsonReadEvent::NumberLiteral(JsonNumber("23.235e-1")),
-        JsonReadEvent::NullLiteral,
-        JsonReadEvent::NullLiteral,
-        JsonReadEvent::EndArray,
-        JsonReadEvent::Key("ooo"),
-        JsonReadEvent::StartObject,
-        JsonReadEvent::Key("lll"),
-        JsonReadEvent::StringLiteral("whatever"),
-        JsonReadEvent::Key("ar"),
-        JsonReadEvent::StartArray,
-        JsonReadEvent::EndArray,
-        JsonReadEvent::EndObject,
-        JsonReadEvent::EndObject,
+        JsonReadToken::StartObject,
+        JsonReadToken::Key("abc"),
+        JsonReadToken::StringLiteral("yo"),
+        JsonReadToken::Key("xyz"),
+        JsonReadToken::StringLiteral("yo"),
+        JsonReadToken::Key("aaaa"),
+        JsonReadToken::StartArray,
+        JsonReadToken::StringLiteral("111"),
+        JsonReadToken::StringLiteral("11"),
+        JsonReadToken::StartObject,
+        JsonReadToken::EndObject,
+        JsonReadToken::StartArray,
+        JsonReadToken::EndArray,
+        JsonReadToken::NullLiteral,
+        JsonReadToken::BooleanLiteral(true),
+        JsonReadToken::BooleanLiteral(false),
+        JsonReadToken::NumberLiteral(JsonNumber("-23987")),
+        JsonReadToken::NumberLiteral(JsonNumber("23987")),
+        JsonReadToken::NumberLiteral(JsonNumber("23.235")),
+        JsonReadToken::NullLiteral,
+        JsonReadToken::NullLiteral,
+        JsonReadToken::NumberLiteral(JsonNumber("23.235e-1")),
+        JsonReadToken::NullLiteral,
+        JsonReadToken::NullLiteral,
+        JsonReadToken::EndArray,
+        JsonReadToken::Key("ooo"),
+        JsonReadToken::StartObject,
+        JsonReadToken::Key("lll"),
+        JsonReadToken::StringLiteral("whatever"),
+        JsonReadToken::Key("ar"),
+        JsonReadToken::StartArray,
+        JsonReadToken::EndArray,
+        JsonReadToken::EndObject,
+        JsonReadToken::EndObject,
     ], None)]
 
     #[tokio::test]
-    async fn test_parse(#[case] input: &str, #[case] expected: Vec<JsonReadEvent<'static>>, #[case] expected_error: Option<JsonParseError<std::io::Error>>) {
+    async fn test_parse(#[case] input: &str, #[case] expected: Vec<JsonReadToken<'static>>, #[case] expected_error: Option<JsonParseError<std::io::Error>>) {
         let input_with_whitespace = format!(" \r\n\t{} \r\n\t", input);
 
         {
@@ -613,7 +625,7 @@ mod tests {
                 }
             }
             else {
-                assert_eq!(parser.next().await.unwrap(), JsonReadEvent::EndOfStream);
+                assert_eq!(parser.next().await.unwrap(), JsonReadToken::EndOfStream);
             }
         }
         {
@@ -629,7 +641,7 @@ mod tests {
                 }
             }
             else {
-                assert_eq!(parser.next().await.unwrap(), JsonReadEvent::EndOfStream);
+                assert_eq!(parser.next().await.unwrap(), JsonReadToken::EndOfStream);
             }
         }
     }
@@ -639,8 +651,8 @@ mod tests {
         let buf = [0u8;8];
         let mut r = Cursor::new(b"123".to_vec());
         let mut reader = JsonReader::new_with_provided_buffer(buf, &mut r, false);
-        assert_eq!(reader.next().await?, JsonReadEvent::NumberLiteral(JsonNumber("123")));
-        assert_eq!(reader.next().await?, JsonReadEvent::EndOfStream);
+        assert_eq!(reader.next().await?, JsonReadToken::NumberLiteral(JsonNumber("123")));
+        assert_eq!(reader.next().await?, JsonReadToken::EndOfStream);
         Ok(())
     }
 
@@ -729,7 +741,7 @@ mod tests {
         let mut parser = JsonReader::new(64, &mut r);
         match parser.expect_next_key().await {
             Ok(actual) => assert_eq!(actual, expected.unwrap()),
-            Err(JsonParseError::UnexpectedEvent(_)) => assert!(expected.is_none()),
+            Err(JsonParseError::UnexpectedToken(_)) => assert!(expected.is_none()),
             Err(e) => panic!("unexpected error: {}", e)
         }
     }
@@ -737,14 +749,14 @@ mod tests {
     #[rstest]
     #[case::simple("1", Ok(1))]
     #[case::other_number("500", Err(JsonParseError::Parse("invalid number", Location::start())))]
-    #[case::null("null", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::string("\"abc\"", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::string("\"abc\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_number(#[case] json: &str, #[case] expected_num: JsonParseResult<u8, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -762,13 +774,13 @@ mod tests {
     #[case::simple("1", Ok(Some(1)))]
     #[case::other_number("500", Err(JsonParseError::Parse("invalid number", Location::start())))]
     #[case::null("null", Ok(None))]
-    #[case::string("\"abc\"", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::string("\"abc\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_number(#[case] json: &str, #[case] expected_num: JsonParseResult<Option<u8>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -784,14 +796,14 @@ mod tests {
 
     #[rstest]
     #[case::simple("\"qrs\"", Ok("qrs"))]
-    #[case::null("null", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_string(#[case] json: &str, #[case] expected: JsonParseResult<&str, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -808,13 +820,13 @@ mod tests {
     #[rstest]
     #[case::simple("\"rst\"", Ok(Some("rst")))]
     #[case::null("null", Ok(None))]
-    #[case::number("12", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_string(#[case] json: &str, #[case] expected: JsonParseResult<Option<&str>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -830,14 +842,14 @@ mod tests {
     #[rstest]
     #[case::bool_true("true", Ok(true))]
     #[case::bool_false("false", Ok(false))]
-    #[case::null("null", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::string("\"a\"", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::string("\"a\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_bool(#[case] json: &str, #[case] expected: JsonParseResult<bool, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -855,13 +867,13 @@ mod tests {
     #[case::bool_true("true", Ok(Some(true)))]
     #[case::bool_false("false", Ok(Some(false)))]
     #[case::null("null", Ok(None))]
-    #[case::string("\"x\"", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::string("\"x\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_bool(#[case] json: &str, #[case] expected: JsonParseResult<Option<bool>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -876,15 +888,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::null("null", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::string("\"a\"", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::string("\"a\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[case::start_object("{", Ok(()))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_start_object(#[case] json: &str, #[case] expected: JsonParseResult<(), io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -899,15 +911,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::bool("false", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::bool("false", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[case::null("null", Ok(None))]
-    #[case::string("\"x\"", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::string("\"x\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[case::start_object("{", Ok(Some(())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_start_object(#[case] json: &str, #[case] expected: JsonParseResult<Option<()>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -922,15 +934,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::null("null", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::string("\"a\"", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::string("\"a\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[case::start_array("[", Ok(()))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_start_array(#[case] json: &str, #[case] expected: JsonParseResult<(), io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -945,15 +957,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::bool("false", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::bool("false", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[case::null("null", Ok(None))]
-    #[case::string("\"x\"", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedEvent(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::string("\"x\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[case::start_array("[", Ok(Some(())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedEvent(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_start_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<()>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
