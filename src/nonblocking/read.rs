@@ -91,7 +91,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         match next {
             JsonReadToken::Key(key) => Ok(Some(key)),
             JsonReadToken::EndObject => Ok(None),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -101,7 +101,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let next = self.next().await?;
         match next {
             JsonReadToken::NumberLiteral(n) => Ok(n),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -112,7 +112,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         match next {
             JsonReadToken::NullLiteral => Ok(None),
             JsonReadToken::NumberLiteral(n) => Ok(Some(n)),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -141,7 +141,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let next = self.next().await?;
         match next {
             JsonReadToken::StringLiteral(s) => Ok(s),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -151,7 +151,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         match next {
             JsonReadToken::NullLiteral => Ok(None),
             JsonReadToken::StringLiteral(s) => Ok(Some(s)),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -160,7 +160,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let next = self.next().await?;
         match next {
             JsonReadToken::BooleanLiteral(b) => Ok(b),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -170,7 +170,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         match next {
             JsonReadToken::NullLiteral => Ok(None),
             JsonReadToken::BooleanLiteral(b) => Ok(Some(b)),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -179,7 +179,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let next = self.next().await?;
         match next {
             JsonReadToken::StartObject => Ok(()),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -189,7 +189,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         match next {
             JsonReadToken::NullLiteral => Ok(None),
             JsonReadToken::StartObject => Ok(Some(())),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -198,7 +198,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         let next = self.next().await?;
         match next {
             JsonReadToken::StartArray => Ok(()),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -208,7 +208,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         match next {
             JsonReadToken::NullLiteral => Ok(None),
             JsonReadToken::StartArray => Ok(Some(())),
-            _ => Err(JsonParseError::UnexpectedToken(location)),
+            other => Err(JsonParseError::UnexpectedToken(other.kind(), location)),
         }
     }
 
@@ -229,7 +229,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
                     }
                 }
                 JsonReadToken::EndOfStream => {
-                    return Err(JsonParseError::UnexpectedToken(self.location()));
+                    return Err(JsonParseError::UnexpectedToken(JsonReadToken::EndOfStream.kind(), self.location()));
                 }
                 _ => {
                     continue;
@@ -247,7 +247,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
             JsonReadToken::EndObject |
             JsonReadToken::EndArray |
             JsonReadToken::EndOfStream => {
-                Err(JsonParseError::UnexpectedToken(self.location()))
+                Err(JsonParseError::UnexpectedToken(JsonReadToken::EndOfStream.kind(), self.location()))
             }
             JsonReadToken::StartObject |
             JsonReadToken::StartArray => {
@@ -470,8 +470,8 @@ mod tests {
                     return;
                 }
             }
-            JsonParseError::UnexpectedToken(_) => {
-                if let JsonParseError::UnexpectedToken(_) = expected {
+            JsonParseError::UnexpectedToken(_, _) => {
+                if let JsonParseError::UnexpectedToken(_, _) = expected {
                     return;
                 }
             }
@@ -791,7 +791,7 @@ mod tests {
         let mut parser = JsonReader::new(64, &mut r);
         match parser.expect_next_key().await {
             Ok(actual) => assert_eq!(actual, expected.unwrap()),
-            Err(JsonParseError::UnexpectedToken(_)) => assert!(expected.is_none()),
+            Err(JsonParseError::UnexpectedToken(_,_)) => assert!(expected.is_none()),
             Err(e) => panic!("unexpected error: {}", e)
         }
     }
@@ -799,14 +799,14 @@ mod tests {
     #[rstest]
     #[case::simple("1", Ok(1))]
     #[case::other_number("500", Err(JsonParseError::Parse("invalid number", Location::start())))]
-    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::string("\"abc\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::string("\"abc\"", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_number(#[case] json: &str, #[case] expected_num: JsonParseResult<u8, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -824,13 +824,13 @@ mod tests {
     #[case::simple("1", Ok(Some(1)))]
     #[case::other_number("500", Err(JsonParseError::Parse("invalid number", Location::start())))]
     #[case::null("null", Ok(None))]
-    #[case::string("\"abc\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::string("\"abc\"", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_number(#[case] json: &str, #[case] expected_num: JsonParseResult<Option<u8>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -846,14 +846,14 @@ mod tests {
 
     #[rstest]
     #[case::simple("\"qrs\"", Ok("qrs"))]
-    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_string(#[case] json: &str, #[case] expected: JsonParseResult<&str, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -870,13 +870,13 @@ mod tests {
     #[rstest]
     #[case::simple("\"rst\"", Ok(Some("rst")))]
     #[case::null("null", Ok(None))]
-    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_string(#[case] json: &str, #[case] expected: JsonParseResult<Option<&str>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -892,14 +892,14 @@ mod tests {
     #[rstest]
     #[case::bool_true("true", Ok(true))]
     #[case::bool_false("false", Ok(false))]
-    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::string("\"a\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::string("\"a\"", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_bool(#[case] json: &str, #[case] expected: JsonParseResult<bool, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -917,13 +917,13 @@ mod tests {
     #[case::bool_true("true", Ok(Some(true)))]
     #[case::bool_false("false", Ok(Some(false)))]
     #[case::null("null", Ok(None))]
-    #[case::string("\"x\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::string("\"x\"", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_bool(#[case] json: &str, #[case] expected: JsonParseResult<Option<bool>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -938,15 +938,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::string("\"a\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::string("\"a\"", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[case::start_object("{", Ok(()))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_start_object(#[case] json: &str, #[case] expected: JsonParseResult<(), io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -961,15 +961,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::bool("false", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::bool("false", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[case::null("null", Ok(None))]
-    #[case::string("\"x\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::string("\"x\"", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[case::start_object("{", Ok(Some(())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_array("[", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_start_object(#[case] json: &str, #[case] expected: JsonParseResult<Option<()>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -984,15 +984,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::null("null", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::bool("true", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::string("\"a\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::null("null", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::string("\"a\"", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[case::start_array("[", Ok(()))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_start_array(#[case] json: &str, #[case] expected: JsonParseResult<(), io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
@@ -1007,15 +1007,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::bool("false", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::bool("false", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[case::null("null", Ok(None))]
-    #[case::string("\"x\"", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::number("12", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::start_object("{", Err(JsonParseError::UnexpectedToken(Location::start())))]
-    #[case::end_object("}", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::string("\"x\"", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[case::start_array("[", Ok(Some(())))]
-    #[case::end_array("]", Err(JsonParseError::UnexpectedToken(Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::UnexpectedToken("", Location::start())))]
     #[tokio::test]
     async fn test_expect_next_opt_start_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<()>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());

@@ -34,7 +34,7 @@ fn read(json_lines: String) -> JsonParseResult<(), io::Error> {
                 JsonReadToken::Key("a") => println!("  a={:?}", json_reader.expect_next_string()?),
                 JsonReadToken::Key("b") => println!("  b={:?}", json_reader.expect_next_number::<u32>()?),
                 JsonReadToken::EndObject => break,
-                _ => return Err(JsonParseError::UnexpectedToken(json_reader.location())),
+                _ => return Err(JsonParseError::UnexpectedToken(JsonReadToken::EndObject.kind(), json_reader.location())),
             }
         }
         println!("end object");

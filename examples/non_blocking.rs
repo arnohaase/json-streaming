@@ -8,6 +8,7 @@ use json_api::nonblocking::{JsonObject, JsonReader, JsonWriter};
 use json_api::shared::read::{JsonParseError, JsonParseResult, JsonReadToken};
 use std::io;
 use std::io::Cursor;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 #[tokio::main]
 async fn main() {
@@ -29,7 +30,10 @@ async fn main() {
 ///   "favorite-colors": [ "red", "blue", "yellow" ]
 /// }
 /// ```
-async fn write(w: &mut Vec<u8>) -> io::Result<()> {
+async fn write<W>(w: &mut W) -> io::Result<()>
+where
+    W: AsyncWrite + Send + Unpin
+{
     // The first step when writing JSON is to wrap the raw Write instance in a JsonWriter. The
     //  JsonWriter takes care of (among other things) formatting the output.
     // For this example, we use the 'pretty' format that adds indentation for human readability.
@@ -69,7 +73,10 @@ async fn write(w: &mut Vec<u8>) -> io::Result<()> {
 
 /// Read a JSON stream, expecting the above JSON document structure but being lenient about e.g.
 ///  the order of the elements
-async fn read(r: &mut Cursor<Vec<u8>>) -> JsonParseResult<(), io::Error> {
+async fn read<R>(r: &mut R) -> JsonParseResult<(), io::Error>
+where
+    R: AsyncRead + Send + Unpin
+{
     // The first step is to wrap the underlying 'Read' in a JsonReader which provides a stream
     //  of JSON tokens.
     // Note that we need to pass a buffer size to the JsonReader: This is the maximum number of
@@ -129,7 +136,10 @@ async fn read(r: &mut Cursor<Vec<u8>>) -> JsonParseResult<(), io::Error> {
 ///  * The representation of its internal read buffer, which we don't really care about. Its type
 ///     bound is `AsMut<[u8]>`.
 ///  * The concrete type of the underlying reader.
-async fn read_favorite_colors<B: AsMut<[u8]>>(r: &mut JsonReader<'_, B, Cursor<Vec<u8>>>) -> JsonParseResult<(), io::Error> {
+async fn read_favorite_colors<B: AsMut<[u8]>, R>(r: &mut JsonReader<'_, B, R>) -> JsonParseResult<(), io::Error>
+where
+    R: AsyncRead + Send + Unpin
+{
     // The next token must be the start of a JSON array
     r.expect_next_start_array().await?;
     loop {

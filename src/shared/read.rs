@@ -18,6 +18,23 @@ pub enum JsonReadToken<'a> {
 
     EndOfStream,
 }
+impl <'a> JsonReadToken<'a> {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            JsonReadToken::StartObject => "{",
+            JsonReadToken::EndObject => "}",
+            JsonReadToken::StartArray => "[",
+            JsonReadToken::EndArray => "]",
+            JsonReadToken::Key(_) => "key",
+            JsonReadToken::StringLiteral(_) => "string",
+            JsonReadToken::NumberLiteral(_) => "number",
+            JsonReadToken::BooleanLiteral(_) => "boolean",
+            JsonReadToken::NullLiteral => "null",
+            JsonReadToken::EndOfStream => "<EOF>",
+        }
+    }
+}
+
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct JsonNumber<'a>(pub &'a str);
@@ -67,7 +84,7 @@ pub enum JsonParseError<E: Error> {
     Io(E),
     Utf8(Utf8Error),
     Parse(&'static str, Location),
-    UnexpectedToken(Location), //TODO kind of token
+    UnexpectedToken(&'static str, Location), //TODO kind of token
     BufferOverflow(Location),
 }
 impl <E: Error> Display for JsonParseError<E> {
@@ -76,7 +93,7 @@ impl <E: Error> Display for JsonParseError<E> {
             JsonParseError::Io(err) => write!(f, "I/O error: {}", err),
             JsonParseError::Utf8(err) => write!(f, "Invalid UTF8: {}", err),
             JsonParseError::Parse(msg, location) => write!(f, "parse error: {} @ {}", msg, location),
-            JsonParseError::UnexpectedToken(location) => write!(f, "unexpected event @ {}", location),
+            JsonParseError::UnexpectedToken(kind, location) => write!(f, "unexpected token '{}' @ {}", kind, location),
             JsonParseError::BufferOverflow(location) => write!(f, "buffer overflow @ {}", location),
         }
     }
