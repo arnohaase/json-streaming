@@ -11,8 +11,8 @@
 //! * When reading, use the [new_with_lenient_comma_handling] function to create the JsonReader to
 //!    skip the check for commas between the objects
 
-use json_api::blocking::{JsonObject, JsonReader, JsonWriter};
-use json_api::shared::read::{JsonParseError, JsonParseResult, JsonReadToken};
+use json_streaming::blocking::{JsonObject, JsonReader, JsonWriter};
+use json_streaming::shared::read::{JsonParseError, JsonParseResult, JsonReadToken};
 use std::io;
 use std::io::Cursor;
 

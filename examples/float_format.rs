@@ -21,9 +21,9 @@
 
 use core::fmt::Write;
 use std::io;
-use json_api::blocking::{JsonArray, JsonWriter};
-use json_api::shared::float_format::FloatFormat;
-use json_api::shared::json_formatter::CompactFormatter;
+use json_streaming::blocking::{JsonArray, JsonWriter};
+use json_streaming::shared::float_format::FloatFormat;
+use json_streaming::shared::json_formatter::CompactFormatter;
 
 /// [ExponentialFloatFormat] formats all numbers in exponential representation
 struct ExponentialFloatFormat;

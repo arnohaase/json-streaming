@@ -12,7 +12,7 @@
 //!
 //! Here's a simple example of how to use the library, with explanations following the code:
 //! ```
-//! use json_api::blocking::*;
+//! use json_streaming::blocking::*;
 //!
 //! fn write_something() -> std::io::Result<()> {
 //!     let mut stdout = std::io::stdout();

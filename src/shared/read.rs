@@ -84,7 +84,7 @@ pub enum JsonParseError<E: Error> {
     Io(E),
     Utf8(Utf8Error),
     Parse(&'static str, Location),
-    UnexpectedToken(&'static str, Location), //TODO kind of token
+    UnexpectedToken(&'static str, Location),
     BufferOverflow(Location),
 }
 impl <E: Error> Display for JsonParseError<E> {

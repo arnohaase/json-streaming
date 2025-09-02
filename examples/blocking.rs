@@ -6,8 +6,8 @@
 
 use std::io;
 use std::io::Cursor;
-use json_api::blocking::{JsonObject, JsonReader, JsonWriter};
-use json_api::shared::read::{JsonParseError, JsonParseResult, JsonReadToken};
+use json_streaming::blocking::{JsonObject, JsonReader, JsonWriter};
+use json_streaming::shared::read::{JsonParseError, JsonParseResult, JsonReadToken};
 
 fn main() {
     let mut buf = Vec::new();

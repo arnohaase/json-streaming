@@ -184,7 +184,7 @@ mod tests {
             code(&mut object_ser)?;
         }
 
-        let actual = String::from_utf8(writer.into_inner()?.to_vec()).unwrap();
+        let actual = String::from_utf8(buf).unwrap();
         assert_eq!(actual, expected);
         Ok(())
     }
@@ -246,7 +246,7 @@ mod tests {
                 code(&mut object_ser)?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?.to_vec()).unwrap();
+            let actual = String::from_utf8(buf).unwrap();
             let expected = format!(r#"{}"a":{}{}"#, "{", expected, "}");
             assert_eq!(actual, expected);
         }
@@ -262,7 +262,7 @@ mod tests {
                 object_ser.write_u32_value("y", 5)?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?.to_vec()).unwrap();
+            let actual = String::from_utf8(buf).unwrap();
             let expected = format!(r#"{}"x":null,"a":{},"y":5{}"#, "{", expected, "}");
             assert_eq!(actual, expected);
         }

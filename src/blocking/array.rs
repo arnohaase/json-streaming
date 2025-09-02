@@ -188,7 +188,7 @@ mod tests {
             code(&mut array_ser)?;
         }
 
-        let actual = String::from_utf8(writer.into_inner()?.to_vec()).unwrap();
+        let actual = String::from_utf8(buf).unwrap();
         assert_eq!(actual, expected);
         Ok(())
     }
@@ -250,7 +250,7 @@ mod tests {
                 code(&mut array_ser)?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?.to_vec()).unwrap(); //TODO here and elsewhere: just use 'buf'
+            let actual = String::from_utf8(buf).unwrap();
             let expected = format!("[{}]", expected);
             assert_eq!(actual, expected);
         }
@@ -265,7 +265,7 @@ mod tests {
                 code(&mut array_ser)?;
             }
 
-            let actual = String::from_utf8(writer.into_inner()?.to_vec()).unwrap();
+            let actual = String::from_utf8(buf).unwrap();
             let expected = format!("[null,{}]", expected);
             assert_eq!(actual, expected);
         }

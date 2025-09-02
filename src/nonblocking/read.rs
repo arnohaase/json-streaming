@@ -14,7 +14,6 @@ impl<'a, R: NonBlockingRead> JsonReader<'a, Vec<u8>, R> {
         Self::new_with_provided_buffer(buf, reader, false)
     }
 
-    //TODO unit test
     pub fn new_with_lenient_comma_handling(buf_size: usize, reader: &'a mut R) -> Self {
         let buf = vec![0u8; buf_size];
         Self::new_with_provided_buffer(buf, reader, true)
@@ -95,7 +94,6 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
-    //TODO unit test
     pub async fn expect_next_raw_number(&mut self) -> JsonParseResult<JsonNumber<'_>, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -105,7 +103,6 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
-    //TODO unit test
     pub async fn expect_next_opt_raw_number(&mut self) -> JsonParseResult<Option<JsonNumber<'_>>, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -212,7 +209,6 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
-    //TODO unit test
     /// start object / start array is consumed -> count start / end, count nesting levels, end after
     ///  consuming an 'end'
     pub async fn skip_to_end_of_current_scope(&mut self) -> JsonParseResult<(), R::Error> {
@@ -239,7 +235,6 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         Ok(())
     }
 
-    //TODO unit test
     /// in an object, after reading an unhandled key
     pub async fn skip_value(&mut self) -> JsonParseResult<(), R::Error> {
         match self.next().await? {
@@ -282,7 +277,6 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
             return Ok(Some(parked));
         }
 
-        //TODO BufRead? no_std trait? optimize & clean up!
         if let Some(byte) =self.reader.read().await? {
             self.inner.cur_location.after_byte(byte);
             Ok(Some(byte))
@@ -446,9 +440,9 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
     use super::*;
     use rstest::*;
+    use std::io;
     use std::io::Cursor;
 
     fn assert_is_similar_error(actual: &JsonParseError<std::io::Error>, expected: &JsonParseError<std::io::Error>) {
@@ -663,35 +657,35 @@ mod tests {
 
         {
             let mut r = Cursor::new(input.as_bytes().to_vec());
-            let mut parser = JsonReader::new(64, &mut r);
+            let mut json_reader = JsonReader::new(64, &mut r);
             for evt in &expected {
-                let parsed_evt = parser.next().await;
+                let parsed_evt = json_reader.next().await;
                 assert_eq!(&parsed_evt.unwrap(), evt);
             }
             if let Some(expected_error) = &expected_error {
-                match parser.next().await {
+                match json_reader.next().await {
                     Ok(_) => panic!("expected error but was ok: {}", expected_error),
                     Err(e) => assert_is_similar_error(&e, expected_error),
                 }
             }
             else {
-                assert_eq!(parser.next().await.unwrap(), JsonReadToken::EndOfStream);
+                assert_eq!(json_reader.next().await.unwrap(), JsonReadToken::EndOfStream);
             }
         }
         {
             let mut r = Cursor::new(input_with_whitespace.as_bytes().to_vec());
-            let mut parser = JsonReader::new(64, &mut r);
+            let mut json_reader = JsonReader::new(64, &mut r);
             for evt in &expected {
-                assert_eq!(&parser.next().await.unwrap(), evt);
+                assert_eq!(&json_reader.next().await.unwrap(), evt);
             }
             if let Some(expected_error) = &expected_error {
-                match parser.next().await {
+                match json_reader.next().await {
                     Ok(_) => panic!("expected error but was ok: {}", expected_error),
                     Err(e) => assert_is_similar_error(&e, expected_error),
                 }
             }
             else {
-                assert_eq!(parser.next().await.unwrap(), JsonReadToken::EndOfStream);
+                assert_eq!(json_reader.next().await.unwrap(), JsonReadToken::EndOfStream);
             }
         }
     }
@@ -788,8 +782,8 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_key(#[case] json: &str, #[case] expected: Option<Option<&str>>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_key().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_key().await {
             Ok(actual) => assert_eq!(actual, expected.unwrap()),
             Err(JsonParseError::UnexpectedToken(_,_)) => assert!(expected.is_none()),
             Err(e) => panic!("unexpected error: {}", e)
@@ -810,8 +804,8 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_number(#[case] json: &str, #[case] expected_num: JsonParseResult<u8, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_number::<u8>().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_number::<u8>().await {
             Ok(n) => assert_eq!(n, expected_num.unwrap()),
             Err(act_e) => match expected_num {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -834,13 +828,40 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_opt_number(#[case] json: &str, #[case] expected_num: JsonParseResult<Option<u8>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_opt_number::<u8>().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_opt_number::<u8>().await {
             Ok(n) => assert_eq!(n, expected_num.unwrap()),
             Err(act_e) => match expected_num {
                 Ok(_) => panic!("unexpected error: {}", act_e),
                 Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_expect_next_raw_number() {
+        let json = " 123.45  ";
+        let mut r = Cursor::new(json.as_bytes().to_vec());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        let actual = json_reader.expect_next_raw_number().await.unwrap();
+        assert_eq!(actual, JsonNumber("123.45"));
+    }
+
+    #[rstest]
+    #[case::number(" 5 ", Ok(Some(JsonNumber("5"))))]
+    #[case::null(" null ", Ok(None))]
+    #[case::boolean(" true ", Err(JsonParseError::UnexpectedToken("", Location::start())))]
+    #[tokio::test]
+    async fn test_expect_next_opt_raw_number(#[case] json: &str, #[case] expected_num: JsonParseResult<Option<JsonNumber<'_>>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes().to_vec());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_opt_raw_number().await {
+            Ok(o) => assert_eq!(o, expected_num.unwrap()),
+            Err(act_e) => match expected_num {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+
         }
     }
 
@@ -857,8 +878,8 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_string(#[case] json: &str, #[case] expected: JsonParseResult<&str, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_string().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_string().await {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -880,8 +901,8 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_opt_string(#[case] json: &str, #[case] expected: JsonParseResult<Option<&str>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_opt_string().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_opt_string().await {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -903,8 +924,8 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_bool(#[case] json: &str, #[case] expected: JsonParseResult<bool, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_bool().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_bool().await {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -927,8 +948,8 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_opt_bool(#[case] json: &str, #[case] expected: JsonParseResult<Option<bool>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_opt_bool().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_opt_bool().await {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -950,8 +971,8 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_start_object(#[case] json: &str, #[case] expected: JsonParseResult<(), io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_start_object().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_start_object().await {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -973,8 +994,8 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_opt_start_object(#[case] json: &str, #[case] expected: JsonParseResult<Option<()>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_opt_start_object().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_opt_start_object().await {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -996,8 +1017,8 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_start_array(#[case] json: &str, #[case] expected: JsonParseResult<(), io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_start_array().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_start_array().await {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -1019,13 +1040,100 @@ mod tests {
     #[tokio::test]
     async fn test_expect_next_opt_start_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<()>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes().to_vec());
-        let mut parser = JsonReader::new(64, &mut r);
-        match parser.expect_next_opt_start_array().await {
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_next_opt_start_array().await {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
                 Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_with_lenient_comma() {
+        let json = r#"
+        { "a": 1}
+        { "a": 2}
+        "#;
+
+        {
+            let mut r = Cursor::new(json.as_bytes().to_vec());
+            let result = try_read_json_lines(&mut JsonReader::new(64, &mut r)).await;
+            assert!(result.is_err());
+        }
+
+        {
+            let mut r = Cursor::new(json.as_bytes().to_vec());
+            let result = try_read_json_lines(&mut JsonReader::new_with_lenient_comma_handling(64, &mut r)).await;
+            assert_eq!(result.unwrap(), vec![1, 2]);
+        }
+    }
+
+    async fn try_read_json_lines(json_reader: &mut JsonReader<'_, Vec<u8>, Cursor<Vec<u8>>>) -> JsonParseResult<Vec<u32>, io::Error> {
+        let mut result = Vec::new();
+        while json_reader.next().await? == JsonReadToken::StartObject {
+            loop {
+                match json_reader.expect_next_key().await? {
+                    Some("a") => result.push( json_reader.expect_next_number().await?),
+                    Some(_) => json_reader.skip_value().await?,
+                    None => break,
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    #[rstest]
+    #[case::end_object_empty("}, 77", false)]
+    #[case::end_object_simple(r#" "a": 10, "b": null }, 77"#, false)]
+    #[case::end_object_nested(r#" "a": 10, "x": { "q": 99, "r": [1, 2, 3] }, "b": null }, 77"#, false)]
+    #[case::end_array_empty("], 77", false)]
+    #[case::end_array_simple(r#"99, "abc", null, true], 77"#, false)]
+    #[case::end_array_nested(r#"99, [1, [], true, {"abc": { "xyz": [1, 2, 3]}}], "abc", null, true], 77"#, false)]
+    #[case::number("1, 77", true)]
+    #[case::boolean("true, 77", true)]
+    #[case::null("null, 77", true)]
+    #[tokio::test]
+    async fn test_skip_to_end_of_current_scope(#[case] json: &str, #[case] should_fail: bool) -> JsonParseResult<(), io::Error> {
+        let mut r = Cursor::new(json.as_bytes().to_vec());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.skip_to_end_of_current_scope().await {
+            Ok(_) => {
+                assert!(!should_fail);
+                assert_eq!(77, json_reader.expect_next_number::<u32>().await?);
+            }
+            Err(_) => {
+                assert!(should_fail);
+            }
+        }
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::number(r#"123, 77"#, false)]
+    #[case::string(r#""abc", 77"#, false)]
+    #[case::boolean(r#"true, 77"#, false)]
+    #[case::null(r#"null, 77"#, false)]
+    #[case::object_empty(r#"{}, 77"#, false)]
+    #[case::object_simple(r#"{ "a": 10, "b": null }, 77"#, false)]
+    #[case::object_nested(r#"{ "a": 10, "x": { "q": 99, "r": [1, 2, 3] }, "b": null }, 77"#, false)]
+    #[case::array_empty("[], 77", false)]
+    #[case::array_simple(r#"[99, "abc", null, true], 77"#, false)]
+    #[case::array_nested(r#"[99, [1, [], true, {"abc": { "xyz": [1, 2, 3]}}], "abc", null, true], 77"#, false)]
+    #[tokio::test]
+    async fn test_skip_value(#[case] json: &str, #[case] should_fail: bool) -> JsonParseResult<(), io::Error> {
+        let mut r = Cursor::new(json.as_bytes().to_vec());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.skip_value().await {
+            Ok(_) => {
+                assert!(!should_fail);
+                assert_eq!(77, json_reader.expect_next_number::<u32>().await?);
+            }
+            Err(_) => {
+                assert!(should_fail);
+            }
+        }
+        Ok(())
     }
 }

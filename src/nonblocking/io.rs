@@ -54,7 +54,6 @@ impl NonBlockingRead for std::io::Cursor<Vec<u8>> {
     }
 }
 
-//TODO unit test feature "tokio"
 #[cfg(feature = "tokio")]
 #[async_trait]
 impl <R: tokio::io::AsyncRead + Unpin + Send> NonBlockingRead for R {
