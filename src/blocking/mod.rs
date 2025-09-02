@@ -1,15 +1,4 @@
-//! This is an API for writing JSON directly to a (blocking) [std::io::Write], i.e. without
-//!  creating an in-memory representation and writing that through serde's `Serializer` mechanism.
-//!
-//! It serves some special use cases:
-//!  * writing big JSON data structures, potentially in a streaming fashion
-//!  * writing a JSON representation that is very different from the data's in-memory representation,
-//!     e.g. flattening maps into fields based on domain knowledge
-//!  * full control over how JSON is written
-//!  * working with JSON in a no-std / no-alloc context
-//! The idea is to use `serde` for common use cases, and to have an alternative where the mapping
-//!  approach becomes unwieldy.
-//!
+//! TODO move this to the structs
 //! Here's a simple example of how to use the library, with explanations following the code:
 //! ```
 //! use json_streaming::blocking::*;
@@ -64,6 +53,9 @@ pub use object::*;
 
 #[allow(unused_imports)]
 pub use read::*;
+
+#[allow(unused_imports)]
+pub use crate::shared::read::*;
 
 #[cfg(test)]
 mod tests {

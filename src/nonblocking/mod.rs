@@ -18,6 +18,10 @@ pub use object::*;
 #[allow(unused_imports)]
 pub use read::*;
 
+#[allow(unused_imports)]
+pub use crate::shared::read::*;
+
+
 #[cfg(test)]
 mod tests {
     use std::io;

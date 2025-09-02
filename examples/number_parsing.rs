@@ -5,8 +5,7 @@
 
 use std::io;
 use std::io::Cursor;
-use json_streaming::blocking::JsonReader;
-use json_streaming::shared::read::{JsonParseError, JsonParseResult};
+use json_streaming::blocking::*;
 
 fn main() -> JsonParseResult<(), io::Error> {
     // We start with an array of numbers so we have data to work with

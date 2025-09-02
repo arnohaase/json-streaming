@@ -11,8 +11,7 @@
 
 use std::io;
 use std::io::Cursor;
-use json_streaming::blocking::JsonReader;
-use json_streaming::shared::read::{JsonParseError, JsonParseResult, JsonReadToken};
+use json_streaming::blocking::*;
 
 fn main() {
     skip_unexpected_keys_in_object().unwrap();
