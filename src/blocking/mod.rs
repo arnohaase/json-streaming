@@ -1,34 +1,4 @@
 //! TODO move this to the structs
-//! Here's a simple example of how to use the library, with explanations following the code:
-//! ```
-//! use json_streaming::blocking::*;
-//!
-//! fn write_something() -> std::io::Result<()> {
-//!     let mut stdout = std::io::stdout();
-//!     let mut writer = JsonWriter::new_pretty(&mut stdout);
-//!     {
-//!         let mut o = JsonObject::new(&mut writer)?;
-//!         o.write_string_value("a", "hello")?;
-//!         o.write_string_value("b", "world")?;
-//!     }
-//!
-//!     writer.flush()
-//! }
-//! ```
-//!
-//! The starting point for this library is [JsonWriter]. This is a thin wrapper around
-//!  a [std::io::Write] with some support for handling JSON handling of data types. It also holds
-//!  the [JsonFormatter], which determines how the generated JSON is formatted. While it is
-//!  possible for applications to provide their own implementations, the library provides two
-//!  variants that are expected to cover the vast majority of cases (given that the shared does
-//!  not affect the generated JSON's semantics):
-//! * [CompactFormatter] writes a minimum of whitespace
-//! * [PrettyFormatter] adds some whitespace and indentation for human readability
-//!
-//! For actually writing a JSON object, code needs to create an [JsonObject] instance based on the
-//!  writer (or an [JsonArray] for writing a top-level array). That instance then has an API for
-//!  writing key/value pairs, nested objects or arrays etc.
-//!
 //! When [JsonObject] or [JsonArray] instances go out of scope, they write their respective closing
 //!  brackets automatically (although they also have optional `end()` functions). This is
 //!  convenient, but it means there is no explicit function call for returning potential

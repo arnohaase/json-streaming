@@ -62,11 +62,14 @@ pub struct JsonReader<'a, B: AsMut<[u8]>, R: NonBlockingRead> {
 }
 
 impl<'a, R: NonBlockingRead> JsonReader<'a, Vec<u8>, R> {
+    /// Create a [JsonReader], allocating a read buffer of given size on the heap.
     pub fn new(buf_size: usize, reader: &'a mut R) -> Self {
         let buf = vec![0u8; buf_size];
         Self::new_with_provided_buffer(buf, reader, false)
     }
 
+    /// Create a [JsonReader] without requiring commas between objects. This is intended for
+    ///  reading [https://jsonlines.org] documents - see the `jsonlines.rs` example for details.
     pub fn new_with_lenient_comma_handling(buf_size: usize, reader: &'a mut R) -> Self {
         let buf = vec![0u8; buf_size];
         Self::new_with_provided_buffer(buf, reader, true)
@@ -77,6 +80,7 @@ impl<'a, R: NonBlockingRead> JsonReader<'a, Vec<u8>, R> {
 
 
 impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
+    /// Create a [JsonReader] that uses an externally provided buffer as its read buffer.
     pub fn new_with_provided_buffer(buf: B, reader: &'a mut R, lenient_comma_handling: bool) -> Self {
         Self {
             inner: ReaderInner::new(buf, lenient_comma_handling),
@@ -84,6 +88,11 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Return the next JSON token. This is the work horse of [JsonReader] and the foundation for
+    ///  other convenience abstraction.
+    ///
+    /// The function does only limited checks of JSON grammar and basically returns whatever tokens
+    ///  it finds.
     pub async fn next(&mut self) -> JsonParseResult<JsonReadToken<'_>, R::Error> {
         self.consume_whitespace().await?;
 
@@ -140,6 +149,9 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// This is the function for the loop to read the members of a JSON object: It returns either
+    ///  a JSON key or `None` if it encounters the `}` that ends the object. All other tokens are
+    ///  invalid and cause the function to fail.
     pub async fn expect_next_key(&mut self) -> JsonParseResult<Option<&str>, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -150,6 +162,9 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Returns a JSON number as a [JsonNumber], and fails if the next token is anything other
+    ///  than a number. That includes the case that the next token is `null` - if the number
+    ///  is optional and `null` a valid value, use [crate::blocking::JsonReader::expect_next_opt_raw_number] instead.
     pub async fn expect_next_raw_number(&mut self) -> JsonParseResult<JsonNumber<'_>, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -159,6 +174,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Returns a [JsonNumber] if the next token is a JSON number, or `None` if the next token
+    ///  is `null`. All other tokens cause the function to fail.
     pub async fn expect_next_opt_raw_number(&mut self) -> JsonParseResult<Option<JsonNumber<'_>>, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -169,6 +186,28 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Returns a number parsed to an application-provided type, failing if the next token is not
+    ///  a JSON number or the number is not parseable to the provided type (e.g. trying to
+    ///  get retrieve a floating point number as a u32).
+    ///
+    /// The expected numeric type can be provided explicitly, like this:
+    /// ```
+    /// # use json_streaming::nonblocking::*;
+    /// # use json_streaming::shared::*;
+    /// # async fn get_num<R: NonBlockingRead>(r: &mut R) -> JsonParseResult<(), R::Error> {
+    /// # let mut json_reader = JsonReader::new(128, r);
+    /// let n = json_reader.expect_next_number::<u32>().await?;
+    /// # Ok(()) }
+    /// ```
+    /// or inferred by the compiler:
+    /// ```
+    /// # use json_streaming::nonblocking::*;
+    /// # use json_streaming::shared::*;
+    /// # async fn get_num<R: NonBlockingRead>(r: &mut R) -> JsonParseResult<(), R::Error> {
+    /// # let mut json_reader = JsonReader::new(128, r);
+    /// let n:u32 = json_reader.expect_next_number().await?;
+    /// # Ok(()) }
+    /// ```
     pub async fn expect_next_number<T: FromStr>(&mut self) -> JsonParseResult<T, R::Error> {
         match self.expect_next_raw_number().await?.parse::<T>() {
             Ok(n) => Ok(n),
@@ -176,6 +215,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// The same as [JsonReader::expect_next_number], but accepting a `null` literal which it
+    ///  returns as `None`.
     pub async fn expect_next_opt_number<T: FromStr>(&mut self) -> JsonParseResult<Option<T>, R::Error> {
         match self.expect_next_opt_raw_number().await {
             Ok(None) => Ok(None),
@@ -189,6 +230,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// If the next token is a string literal, return that, and fail for any other token.
     pub async fn expect_next_string(&mut self) -> JsonParseResult<&str, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -198,6 +240,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// The same as [JsonReader::expect_next_string], but accepting a `null` literal which is
+    ///  returned as `None`.
     pub async fn expect_next_opt_string(&mut self) -> JsonParseResult<Option<&str>, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -208,6 +252,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// `true` and `false` literals are returned as a boolean token, all other tokens cause the
+    ///  function to fail.
     pub async fn expect_next_bool(&mut self) -> JsonParseResult<bool, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -217,6 +263,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// The same as [JsonReader::expect_next_bool], but accepting a `null` literal which is
+    ///  returned as `None`.
     pub async fn expect_next_opt_bool(&mut self) -> JsonParseResult<Option<bool>, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -227,6 +275,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Fails for any token except the `{` that starts an object.
     pub async fn expect_next_start_object(&mut self) -> JsonParseResult<(), R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -236,6 +285,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// The same as [JsonReader::expect_next_start_object], but accepting a `null` literal which is
+    ///  returned as `None`.
     pub async fn expect_next_opt_start_object(&mut self) -> JsonParseResult<Option<()>, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -246,6 +297,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Fails for any token except the `[` that starts an array.
     pub async fn expect_next_start_array(&mut self) -> JsonParseResult<(), R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -255,6 +307,8 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// The same as [JsonReader::expect_next_start_array], but accepting a `null` literal which is
+    ///  returned as `None`.
     pub async fn expect_next_opt_start_array(&mut self) -> JsonParseResult<Option<()>, R::Error> {
         let location = self.location();
         let next = self.next().await?;
@@ -265,8 +319,11 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         }
     }
 
-    /// start object / start array is consumed -> count start / end, count nesting levels, end after
-    ///  consuming an 'end'
+    /// This function assumes that it is called inside an object or array, and silently consumes
+    ///  all tokens until and including the closing `}` or `]`.
+    ///
+    /// This function is useful for gracefully ignoring array elements with an unsupported type. See
+    ///  the `skipping.rs` example for details.
     pub async fn skip_to_end_of_current_scope(&mut self) -> JsonParseResult<(), R::Error> {
         let mut nesting_level = 1;
         loop {
@@ -291,7 +348,13 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         Ok(())
     }
 
-    /// in an object, after reading an unhandled key
+    /// This function skips the value starting with the next token. This can be a single-token value,
+    ///  but it can also be an object or array of unknown structure and nesting depth, in which
+    ///  case this function silently consumes tokens until it reaches the matching closing `}` or
+    ///  `]`.
+    ///
+    /// This function is useful for gracefully ignoring object members with an unknown key - see
+    ///  the `skipping.rs` example for details.
     pub async fn skip_value(&mut self) -> JsonParseResult<(), R::Error> {
         match self.next().await? {
             JsonReadToken::Key(_) |
@@ -488,6 +551,7 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
         Ok(JsonReadToken::NumberLiteral(JsonNumber(self.inner.buf_as_str()?)))
     }
 
+    /// Returns the current parse location in the underlying reader - offset, row and column.
     #[inline]
     pub fn location(&self) -> Location {
         self.inner.cur_location
