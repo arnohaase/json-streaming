@@ -9,9 +9,10 @@
 //! The idioms and APIs are the same for blocking and non-blocking variants. This example uses
 //!  blocking API, but working with non-blocking calls is pretty much identical.
 
+use json_streaming::blocking::*;
+use json_streaming::shared::*;
 use std::io;
 use std::io::Cursor;
-use json_streaming::blocking::*;
 
 fn main() {
     skip_unexpected_keys_in_object().unwrap();

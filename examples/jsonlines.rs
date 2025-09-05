@@ -12,6 +12,7 @@
 //!    skip the check for commas between the objects
 
 use json_streaming::blocking::*;
+use json_streaming::shared::*;
 use std::io;
 use std::io::Cursor;
 

@@ -5,6 +5,7 @@
 //!  is not part of the library's functionality.
 
 use json_streaming::nonblocking::*;
+use json_streaming::shared::*;
 use std::io;
 use std::io::Cursor;
 use tokio::io::{AsyncRead, AsyncWrite};

@@ -4,9 +4,10 @@
 //!  [std::io::Write] instances respectively. The main function takes care of the wiring which
 //!  is not part of the library's functionality.
 
+use json_streaming::blocking::*;
+use json_streaming::shared::*;
 use std::io;
 use std::io::Cursor;
-use json_streaming::blocking::*;
 
 fn main() {
     let mut buf = Vec::new();

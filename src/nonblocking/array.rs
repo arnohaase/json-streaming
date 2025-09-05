@@ -1,10 +1,9 @@
-use crate::shared::float_format::FloatFormat;
-use crate::shared::json_formatter::JsonFormatter;
 use crate::nonblocking::io::NonBlockingWrite;
 use crate::nonblocking::json_writer::JsonWriter;
 use crate::nonblocking::object::JsonObject;
+use crate::shared::*;
 
-/// An [JsonArray] is the API for writing a JSON array, i.e. a sequence of elements. The
+/// A [JsonArray] is the API for writing a JSON array, i.e. a sequence of elements. The
 ///  closing `]` is written when the [JsonArray] instance goes out of scope, or when its `end()`
 ///  function is called.
 ///
@@ -149,11 +148,9 @@ write_arr_int!(usize; write_usize_value);
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::shared::float_format::DefaultFloatFormat;
-    use crate::shared::json_formatter::CompactFormatter;
+    use crate::nonblocking::object::tests::ObjectCommand;
     use rstest::*;
     use std::io;
-    use crate::nonblocking::object::tests::ObjectCommand;
 
     pub enum ArrayCommand {
         Null,

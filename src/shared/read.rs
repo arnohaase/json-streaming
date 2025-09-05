@@ -3,6 +3,8 @@ use core::fmt::{Display, Formatter};
 use core::str::{FromStr, Utf8Error};
 use core::marker::PhantomData;
 
+/// [JsonReadToken] represents a single token read from a `JsonReader`. It does not own string 
+///  data, but references the reader's internal buffer.
 #[derive(Debug, PartialEq, Eq)]
 pub enum JsonReadToken<'a> {
     StartObject,
@@ -36,14 +38,26 @@ impl <'a> JsonReadToken<'a> {
 }
 
 
+/// A [JsonNumber] is the raw representation of a number. It is a parsed representation in the
+///  sense that a `JsonReader` (more or less) verified that it is a valid JSON number, but it has 
+///  not been parsed into an actual Rust numeric type yet.
+///
+/// Client code can either access the string representation, or call the [JsonNumber::parse]
+///  function to parse it into a numeric Rust type.
+/// 
+/// `JsonReader` has a higher-level API for parsing into a Rust number directly, which is usually
+///  the more convenient and preferred way to parse numbers.
 #[derive(Debug, PartialEq, Eq)]
 pub struct JsonNumber<'a>(pub &'a str);
 impl <'a> JsonNumber<'a> {
+    /// Parse a JSON number into some concrete numeric type.
     pub fn parse<F: FromStr>(&self) -> Result<F, F::Err> {
         self.0.parse()
     }
 }
 
+/// Represents a location in a parsed stream: offset as well as line and column. This location
+///  is maintained by a `JsonReader` and is mostly useful to help pinpoint problems.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Location {
     /// in bytes, not characters - aligned with how Rust counts offsets in strings
@@ -79,6 +93,12 @@ impl Location {
 }
 
 
+/// A [JsonParseError] represents the range of things that can go wrong while reading a JSON
+///  stream: I/O error, byte sequences that are invalid UTF-8, violations of JSON tokenization
+///  or grammar, and tokens that exceed the `JsonReader`'s configured token buffer size.
+///
+/// Note that the representation of I/O errors depends on the reader implementation and is therefore
+///  a generic parameter of [JsonParseError]. 
 #[derive(Debug)]
 pub enum JsonParseError<E: Error> {
     Io(E),
@@ -108,6 +128,7 @@ impl <E: Error> From<E> for JsonParseError<E> {
 }
 
 
+/// A convenience type alias for a [Result] with a [JsonParseError] as its error type.
 pub type JsonParseResult<T, E> = Result<T, JsonParseError<E>>;
 
 

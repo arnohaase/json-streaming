@@ -54,15 +54,12 @@ pub use object::*;
 #[allow(unused_imports)]
 pub use read::*;
 
-#[allow(unused_imports)]
-pub use crate::shared::read::*;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io;
-    use crate::shared::float_format::DefaultFloatFormat;
-    use crate::shared::json_formatter::JsonFormatter;
+    use crate::shared::*;
 
     fn do_write_json<F: JsonFormatter>(o: &mut JsonObject<Vec<u8>, F, DefaultFloatFormat>) -> io::Result<()> {
         o.write_string_value("abc", "yo")?;

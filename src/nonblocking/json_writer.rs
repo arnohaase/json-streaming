@@ -1,5 +1,4 @@
-use crate::shared::float_format::{DefaultFloatFormat, FloatFormat};
-use crate::shared::json_formatter::{CompactFormatter, JsonFormatter, PrettyFormatter};
+use crate::shared::*;
 use crate::nonblocking::io::NonBlockingWrite;
 use core::fmt::Display;
 use core::marker::PhantomData;
@@ -125,15 +124,15 @@ impl <'a, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonWriter<'a,
     }
 }
 
-//TODO Rust Doc, move convenience to prominent place, documentation
-
 impl <'a, W: NonBlockingWrite> JsonWriter<'a, W, CompactFormatter, DefaultFloatFormat> {
+    /// Convenience factory for creating a [crate::blocking::JsonWriter] with [CompactFormatter] and [DefaultFloatFormat]
     pub fn new_compact(inner: &'a mut W) -> Self {
         JsonWriter::new(inner, CompactFormatter, DefaultFloatFormat)
     }
 }
 
 impl <'a, W: NonBlockingWrite> JsonWriter<'a, W, PrettyFormatter, DefaultFloatFormat> {
+    /// Convenience factory for creating a [crate::blocking::JsonWriter] with [PrettyFormatter] and [DefaultFloatFormat]
     pub fn new_pretty(inner: &'a mut W) -> Self {
         JsonWriter::new(inner, PrettyFormatter::new(), DefaultFloatFormat)
     }

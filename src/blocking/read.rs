@@ -1,7 +1,6 @@
 use crate::blocking::io::BlockingRead;
-use crate::shared::read::*;
 use core::str::FromStr;
-
+use crate::shared::*;
 
 /// A [JsonReader] wraps a sequence of bytes, aggregating them into a sequence of JSON tokens. It
 ///  is in essentially a tokenizer, adding some rudimentary convenience for JSON's grammar.
@@ -39,6 +38,7 @@ use core::str::FromStr;
 ///
 /// ```
 /// use json_streaming::blocking::*;
+/// use json_streaming::shared::*;
 ///
 /// fn read_something(r: &mut impl std::io::Read) -> JsonParseResult<(), std::io::Error> {
 ///     let mut json_reader = JsonReader::new(1024, r);
@@ -192,17 +192,25 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
     ///
     /// The expected numeric type can be provided explicitly, like this:
     /// ```
+    /// # use json_streaming::blocking::*;
+    /// # use json_streaming::shared::*;
+    /// # fn get_num() -> JsonParseResult<(), std::io::Error> {
     /// # let buf = "123";
     /// # let mut r = std::io::Cursor::new(buf);
-    /// # let mut json_reader = json_streaming::blocking::JsonReader::new(128, &mut r);
-    /// let n = json_reader.expect_next_number::<u32>();
+    /// # let mut json_reader = JsonReader::new(128, &mut r);
+    /// let n = json_reader.expect_next_number::<u32>()?;
+    /// # Ok(()) }
     /// ```
     /// or inferred by the compiler:
     /// ```
+    /// # use json_streaming::blocking::*;
+    /// # use json_streaming::shared::*;
+    /// # fn get_num() -> JsonParseResult<(), std::io::Error> {
     /// # let buf = "123";
     /// # let mut r = std::io::Cursor::new(buf);
-    /// # let mut json_reader = json_streaming::blocking::JsonReader::new(128, &mut r);
-    /// let n:u32 = json_reader.expect_next_number();
+    /// # let mut json_reader = JsonReader::new(128, &mut r);
+    /// let n:u32 = json_reader.expect_next_number()?;
+    /// # Ok(()) }
     /// ```
     pub fn expect_next_number<T: FromStr>(&mut self) -> JsonParseResult<T, R::Error> {
         let n = self.expect_next_raw_number()?;

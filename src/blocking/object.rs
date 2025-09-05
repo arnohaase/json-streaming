@@ -1,10 +1,9 @@
 use crate::blocking::array::JsonArray;
 use crate::blocking::io::BlockingWrite;
 use crate::blocking::json_writer::JsonWriter;
-use crate::shared::float_format::FloatFormat;
-use crate::shared::json_formatter::JsonFormatter;
+use crate::shared::*;
 
-/// An [JsonObject] is the API for writing a JSON object, i.e. a sequence of key/value pairs. The
+/// A [JsonObject] is the API for writing a JSON object, i.e. a sequence of key/value pairs. The
 ///  closing `}` is written when the [JsonObject] instance goes out of scope, or when its `end()`
 ///  function is called.
 ///
@@ -154,8 +153,6 @@ impl <'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> Drop for Json
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::float_format::DefaultFloatFormat;
-    use crate::shared::json_formatter::CompactFormatter;
     use rstest::*;
     use std::io;
 

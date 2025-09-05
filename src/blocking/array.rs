@@ -1,10 +1,9 @@
 use crate::blocking::io::BlockingWrite;
 use crate::blocking::json_writer::JsonWriter;
 use crate::blocking::object::JsonObject;
-use crate::shared::float_format::FloatFormat;
-use crate::shared::json_formatter::JsonFormatter;
+use crate::shared::*;
 
-/// An [JsonArray] is the API for writing a JSON array, i.e. a sequence of elements. The 
+/// A [JsonArray] is the API for writing a JSON array, i.e. a sequence of elements. The
 ///  closing `]` is written when the [JsonArray] instance goes out of scope, or when its `end()`
 ///  function is called.
 ///
@@ -158,10 +157,8 @@ impl <'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> Drop for Json
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::float_format::DefaultFloatFormat;
     use rstest::*;
     use std::io;
-    use crate::shared::json_formatter::CompactFormatter;
 
     type AS<'a, 'b> = JsonArray<'a, 'b, Vec<u8>, CompactFormatter, DefaultFloatFormat>;
 

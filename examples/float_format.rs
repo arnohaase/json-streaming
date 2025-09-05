@@ -20,10 +20,9 @@
 //! This example shows how to customize floating point formatting.
 
 use core::fmt::Write;
-use std::io;
 use json_streaming::blocking::{JsonArray, JsonWriter};
-use json_streaming::shared::float_format::FloatFormat;
-use json_streaming::shared::json_formatter::CompactFormatter;
+use json_streaming::shared::*;
+use std::io;
 
 /// [ExponentialFloatFormat] formats all numbers in exponential representation
 struct ExponentialFloatFormat;

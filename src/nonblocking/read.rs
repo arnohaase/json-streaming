@@ -1,8 +1,61 @@
 use crate::nonblocking::io::NonBlockingRead;
-use crate::shared::read::*;
+use crate::shared::*;
 use core::str::FromStr;
 
-//TODO documentation: tokenizer, no grammar check --> grammar checking wrapper?
+/// A [JsonReader] wraps a sequence of bytes, aggregating them into a sequence of JSON tokens. It
+///  is in essentially a tokenizer, adding some rudimentary convenience for JSON's grammar.
+///
+/// It does *not* try to be a full-blown JSON parser. The reason is that if an application consumes
+///  an actual JSON document, it assumes structure beyond the document being a valid JSON document
+///  ('name is a mandatory string, age is a u32, but it is ok if it is null or not present in the
+///  first place'). [JsonReader] makes it easy for application code to consume data based on such
+///  assumptions - and while it does, application code checks the document's conformity to the JSON
+///  grammar automatically.
+///
+/// A [JsonReader] wraps and consumes a [NonBlockingRead] which is a platform-independent
+///  abstraction for async reading. There is a blanket implementation for [tokio::io::AsyncRead]
+///  which is included with the `tokio` feature flag.
+///
+/// The [JsonReader] holds a mutable reference to the reader rather than taking ownership of it.
+///  That means it needs to have a lifetime parameter, allowing the compiler to ensure that the
+///  reader lives at least as long as the wrapping [JsonReader].
+///
+/// The [JsonReader] also holds a fixed read buffer which it uses to assemble tokens. [JsonReader]
+///  can either work with a buffer passed to it on construction, or it can allocate the buffer as a
+///  convenience, and it does not do *any* memory allocation on the heap beyond that.
+///
+/// The buffer is fixed in length, and if some token (e.g. a string value) does not fit into the
+///  buffer, that causes a failure. While this may look like an inconvenient restriction, it is
+///  actually an important security safeguard: JSON documents often come from external sources and
+///  have limited trustworthiness at best. Without an upper bound on token size, a maliciously or
+///  negligently created document could contain a string literal with a size of a gigabyte,
+///  working as a denial-of-service attack. JSON parsers that work on materialized documents often
+///  address this by placing a restriction on the maximum size of the whole document.
+///
+/// The following code snippet shows a small working example of reading a JSON document with a
+///  single object:
+///
+/// ```
+/// use json_streaming::nonblocking::*;
+/// use json_streaming::shared::*;
+///
+/// async fn read_something<R: NonBlockingRead>(r: &mut R) -> JsonParseResult<(), R::Error> {
+///     let mut json_reader = JsonReader::new(1024, r);
+///
+///     json_reader.expect_next_start_object().await?;
+///     loop {
+///         match json_reader.expect_next_key().await? {
+///             Some("a") => println!("a: {}", json_reader.expect_next_string().await?),
+///             Some("b") => println!("b: {}", json_reader.expect_next_string().await?),
+///             Some(_other) => {
+///                 return Err(JsonParseError::Parse("unexpected key parsing 'person'", json_reader.location()));
+///             },
+///             None => break,
+///         }
+///     }
+///     Ok(())
+/// }
+/// ```
 pub struct JsonReader<'a, B: AsMut<[u8]>, R: NonBlockingRead> {
     inner: ReaderInner<B, R::Error>,
     reader: &'a mut R,
@@ -19,6 +72,9 @@ impl<'a, R: NonBlockingRead> JsonReader<'a, Vec<u8>, R> {
         Self::new_with_provided_buffer(buf, reader, true)
     }
 }
+
+//TODO Rust Doc
+
 
 impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
     pub fn new_with_provided_buffer(buf: B, reader: &'a mut R, lenient_comma_handling: bool) -> Self {

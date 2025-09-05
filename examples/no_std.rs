@@ -11,6 +11,7 @@
 use core::error::Error;
 use std::fmt::Display;
 use json_streaming::blocking::*;
+use json_streaming::shared::*;
 
 /// The reader / writer abstraction requires the presence of some error type. Our implementations
 ///  can't fail with an error, so we define a NoError type for use there.

@@ -19,6 +19,36 @@ async-trait = "0.1"
 tokio = { version = "1", default-features = false, features = ["io-util"] }
 
 [[example]]
+name = "blocking"
+path = "examples/blocking.rs"
+required-features = ["blocking", "std"]
+
+[[example]]
+name = "float_format"
+path = "examples/float_format.rs"
+required-features = ["blocking", "std"]
+
+[[example]]
+name = "jsonlines"
+path = "examples/jsonlines.rs"
+required-features = ["blocking", "std"]
+
+[[example]]
+name = "no_std"
+path = "examples/no_std.rs"
+required-features = ["blocking"]
+
+[[example]]
+name = "number_parsing"
+path = "examples/number_parsing.rs"
+required-features = ["blocking", "std"]
+
+[[example]]
+name = "skipping"
+path = "examples/skipping.rs"
+required-features = ["blocking", "std"]
+
+[[example]]
 name = "non-blocking"
 path = "examples/non_blocking.rs"
 required-features = ["tokio"]
