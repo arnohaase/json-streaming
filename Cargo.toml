@@ -1,7 +1,21 @@
 [package]
 name = "json-streaming"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+authors = [
+    "Arno Haase <arno.haase@haase-consulting.com>",
+]
+description = "a library for reading and writing JSON from / to a stream without the need to materialize the data in memory. Provides both blocking and async APIs."
+keywords = [
+    "json",
+    "streaming",
+    "async",
+    "no-std",
+    "no_std",
+]
+license = "MIT"
+repository = "https://github.com/arnohaase/json-streaming"
+documentation = "https://docs.rs/json-streaming"
 
 [features]
 default = ["blocking", "std", "non-blocking"]
