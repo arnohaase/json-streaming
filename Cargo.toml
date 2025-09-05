@@ -6,6 +6,12 @@ authors = [
     "Arno Haase <arno.haase@haase-consulting.com>",
 ]
 description = "a library for reading and writing JSON from / to a stream without the need to materialize the data in memory. Provides both blocking and async APIs."
+categories = [
+    "no-std",
+    "no-std::no-alloc",
+    "parser-implementations",
+    "web-programming",
+]
 keywords = [
     "json",
     "streaming",
