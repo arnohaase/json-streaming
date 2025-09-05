@@ -13,7 +13,7 @@ keywords = [
     "no-std",
     "no_std",
 ]
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/arnohaase/json-streaming"
 documentation = "https://docs.rs/json-streaming"
 
