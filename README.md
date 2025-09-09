@@ -14,7 +14,7 @@ special use cases:
 
 All APIs exist in both blocking and non-blocking variants.
 
-For a change history and versions, see the [ChangeLog](ChangeLog.md).
+For a change history and versions, see the [Changelog](Changelog.md).
 
 ## Getting started
 
