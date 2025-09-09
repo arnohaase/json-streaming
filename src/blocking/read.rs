@@ -174,6 +174,18 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Same as [JsonReader::expect_raw_number], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_raw_number_or_end_array(&mut self) -> JsonParseResult<Option<JsonNumber<'_>>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::NumberLiteral(n) => Ok(Some(n)),
+            JsonReadToken::EndArray => Ok(None),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
     /// Returns a [JsonNumber] if the next token is a JSON number, or `None` if the next token
     ///  is `null`. All other tokens cause the function to fail.
     pub fn expect_opt_raw_number(&mut self) -> JsonParseResult<Option<JsonNumber<'_>>, R::Error> {
@@ -182,6 +194,19 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         match next {
             JsonReadToken::NullLiteral => Ok(None),
             JsonReadToken::NumberLiteral(n) => Ok(Some(n)),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
+    /// Same as [JsonReader::expect_opt_raw_number], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_opt_raw_number_or_end_array(&mut self) -> JsonParseResult<Option<Option<JsonNumber<'_>>>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::NullLiteral => Ok(Some(None)),
+            JsonReadToken::NumberLiteral(n) => Ok(Some(Some(n))),
+            JsonReadToken::EndArray => Ok(None),
             other => Err(JsonParseError::Parse(other.kind(), location)),
         }
     }
@@ -220,18 +245,46 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         }
     }
 
-    /// The same as [JsonReader::expect_number], but accepting a `null` literal which it
-    ///  returns as `None`.
-    pub fn expect_opt_number<T: FromStr>(&mut self) -> JsonParseResult<Option<T>, R::Error> {
-        match self.expect_opt_raw_number() {
-            Ok(Some(n)) => {
+    /// Same as [JsonReader::expect_number], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_number_or_end_array<T: FromStr>(&mut self) -> JsonParseResult<Option<T>, R::Error> {
+        match self.expect_raw_number_or_end_array()? {
+            None => Ok(None),
+            Some(n) => {
                 match n.parse::<T>() {
                     Ok(n) => Ok(Some(n)),
                     Err(_) => self.parse_err("invalid number"),
                 }
             }
-            Ok(None) => Ok(None),
-            Err(err) => Err(err),
+        }
+    }
+
+    /// The same as [JsonReader::expect_number], but accepting a `null` literal which it
+    ///  returns as `None`.
+    pub fn expect_opt_number<T: FromStr>(&mut self) -> JsonParseResult<Option<T>, R::Error> {
+        match self.expect_opt_raw_number()? {
+            Some(n) => {
+                match n.parse::<T>() {
+                    Ok(n) => Ok(Some(n)),
+                    Err(_) => self.parse_err("invalid number"),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Same as [JsonReader::expect_opt_number], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_opt_number_or_end_array<T: FromStr>(&mut self) -> JsonParseResult<Option<Option<T>>, R::Error> {
+        match self.expect_opt_raw_number_or_end_array()? {
+            Some(Some(n)) => {
+                match n.parse::<T>() {
+                    Ok(n) => Ok(Some(Some(n))),
+                    Err(_) => self.parse_err("invalid number"),
+                }
+            }
+            Some(None) => Ok(Some(None)),
+            None => Ok(None),
         }
     }
 
@@ -241,6 +294,18 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         let next = self.next()?;
         match next {
             JsonReadToken::StringLiteral(s) => Ok(s),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
+    /// Same as [JsonReader::expect_string], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_string_or_end_array(&mut self) -> JsonParseResult<Option<&str>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::StringLiteral(s) => Ok(Some(s)),
+            JsonReadToken::EndArray => Ok(None),
             other => Err(JsonParseError::Parse(other.kind(), location)),
         }
     }
@@ -257,6 +322,19 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Same as [JsonReader::expect_opt_string], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_opt_string_or_end_array(&mut self) -> JsonParseResult<Option<Option<&str>>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::NullLiteral => Ok(Some(None)),
+            JsonReadToken::StringLiteral(s) => Ok(Some(Some(s))),
+            JsonReadToken::EndArray => Ok(None),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
     /// `true` and `false` literals are returned as a boolean token, all other tokens cause the
     ///  function to fail.
     pub fn expect_bool(&mut self) -> JsonParseResult<bool, R::Error> {
@@ -264,6 +342,18 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         let next = self.next()?;
         match next {
             JsonReadToken::BooleanLiteral(b) => Ok(b),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
+    /// Same as [JsonReader::expect_bool], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_bool_or_end_array(&mut self) -> JsonParseResult<Option<bool>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::BooleanLiteral(b) => Ok(Some(b)),
+            JsonReadToken::EndArray => Ok(None),
             other => Err(JsonParseError::Parse(other.kind(), location)),
         }
     }
@@ -280,12 +370,37 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Same as [JsonReader::expect_opt_bool], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_opt_bool_or_end_array(&mut self) -> JsonParseResult<Option<Option<bool>>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::NullLiteral => Ok(Some(None)),
+            JsonReadToken::BooleanLiteral(b) => Ok(Some(Some(b))),
+            JsonReadToken::EndArray => Ok(None),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
     /// Fails for any token except the `{` that starts an object.
     pub fn expect_start_object(&mut self) -> JsonParseResult<(), R::Error> {
         let location = self.location();
         let next = self.next()?;
         match next {
             JsonReadToken::StartObject => Ok(()),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
+    /// Same as [JsonReader::start_object], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_start_object_or_end_array(&mut self) -> JsonParseResult<Option<()>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::StartObject => Ok(Some(())),
+            JsonReadToken::EndArray => Ok(None),
             other => Err(JsonParseError::Parse(other.kind(), location)),
         }
     }
@@ -298,6 +413,19 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         match next {
             JsonReadToken::NullLiteral => Ok(None),
             JsonReadToken::StartObject => Ok(Some(())),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
+    /// Same as [JsonReader::expect_opt_start_object], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_opt_start_object_or_end_array(&mut self) -> JsonParseResult<Option<Option<()>>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::NullLiteral => Ok(Some(None)),
+            JsonReadToken::StartObject => Ok(Some(Some(()))),
+            JsonReadToken::EndArray => Ok(None),
             other => Err(JsonParseError::Parse(other.kind(), location)),
         }
     }
@@ -322,6 +450,18 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         }
     }
 
+    /// Same as [JsonReader::expect_start_array], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_start_array_or_end_array(&mut self) -> JsonParseResult<Option<()>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::StartArray => Ok(Some(())),
+            JsonReadToken::EndArray => Ok(None),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
     /// The same as [JsonReader::expect_start_array], but accepting a `null` literal which is
     ///  returned as `None`.
     pub fn expect_opt_start_array(&mut self) -> JsonParseResult<Option<()>, R::Error> {
@@ -330,6 +470,19 @@ impl<'a, B: AsMut<[u8]>, R: BlockingRead> JsonReader<'a, B, R> {
         match next {
             JsonReadToken::NullLiteral => Ok(None),
             JsonReadToken::StartArray => Ok(Some(())),
+            other => Err(JsonParseError::Parse(other.kind(), location)),
+        }
+    }
+
+    /// Same as [JsonReader::opt_start_array], except that it returns `Ok(None)` if it reaches the end of an
+    ///  array instead
+    pub fn expect_opt_start_array_or_end_array(&mut self) -> JsonParseResult<Option<Option<()>>, R::Error> {
+        let location = self.location();
+        let next = self.next()?;
+        match next {
+            JsonReadToken::NullLiteral => Ok(Some(None)),
+            JsonReadToken::StartArray => Ok(Some(Some(()))),
+            JsonReadToken::EndArray => Ok(None),
             other => Err(JsonParseError::Parse(other.kind(), location)),
         }
     }
@@ -956,6 +1109,29 @@ mod tests {
     #[rstest]
     #[case::simple("1", Ok(Some(1)))]
     #[case::other_number("500", Err(JsonParseError::Parse("invalid number", Location::start())))]
+    #[case::null("null", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::string("\"abc\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_number_or_end_array(#[case] json: &str, #[case] expected_num: JsonParseResult<Option<u8>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_number_or_end_array::<u8>() {
+            Ok(n) => assert_eq!(n, expected_num.unwrap()),
+            Err(act_e) => match expected_num {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::simple("1", Ok(Some(1)))]
+    #[case::other_number("500", Err(JsonParseError::Parse("invalid number", Location::start())))]
     #[case::null("null", Ok(None))]
     #[case::string("\"abc\"", Err(JsonParseError::Parse("", Location::start())))]
     #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
@@ -976,18 +1152,77 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_expect_raw_number() {
-        let json = " 123.45  ";
+    #[rstest]
+    #[case::simple("1", Ok(Some(Some(1))))]
+    #[case::other_number("500", Err(JsonParseError::Parse("invalid number", Location::start())))]
+    #[case::null("null", Ok(Some(None)))]
+    #[case::string("\"abc\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_opt_number_or_end_array(#[case] json: &str, #[case] expected_num: JsonParseResult<Option<Option<u8>>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes());
         let mut json_reader = JsonReader::new(64, &mut r);
-        let actual = json_reader.expect_raw_number().unwrap();
-        assert_eq!(actual, JsonNumber("123.45"));
+        match json_reader.expect_opt_number_or_end_array::<u8>() {
+            Ok(n) => assert_eq!(n, expected_num.unwrap()),
+            Err(act_e) => match expected_num {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::simple(" 123.45 ", Ok(JsonNumber("123.45")))]
+    #[case::null("null", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::string("\"abc\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Err(JsonParseError::Parse("", Location::start())))]
+    fn test_expect_raw_number(#[case] json: &str, #[case] expected_num: JsonParseResult<JsonNumber, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_raw_number() {
+            Ok(n) => assert_eq!(n, expected_num.unwrap()),
+            Err(act_e) => match expected_num {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::simple(" 123.45 ", Ok(Some(JsonNumber("123.45"))))]
+    #[case::null("null", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::string("\"abc\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_raw_number_or_end_array(#[case] json: &str, #[case] expected_num: JsonParseResult<Option<JsonNumber>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_raw_number_or_end_array() {
+            Ok(n) => assert_eq!(n, expected_num.unwrap()),
+            Err(act_e) => match expected_num {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
     }
 
     #[rstest]
     #[case::number(" 5 ", Ok(Some(JsonNumber("5"))))]
     #[case::null(" null ", Ok(None))]
+    #[case::boolean(" ] ", Err(JsonParseError::Parse("", Location::start())))]
     #[case::boolean(" true ", Err(JsonParseError::Parse("", Location::start())))]
     fn test_expect_opt_raw_number(#[case] json: &str, #[case] expected_num: JsonParseResult<Option<JsonNumber>, io::Error>) {
         let mut r = Cursor::new(json.as_bytes());
@@ -998,7 +1233,23 @@ mod tests {
                 Ok(_) => panic!("unexpected error: {}", act_e),
                 Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
             }
+        }
+    }
 
+    #[rstest]
+    #[case::number(" 5 ", Ok(Some(Some(JsonNumber("5")))))]
+    #[case::null(" null ", Ok(Some(None)))]
+    #[case::null(" ] ", Ok(None))]
+    #[case::boolean(" true ", Err(JsonParseError::Parse("", Location::start())))]
+    fn test_expect_opt_raw_number_or_end_array(#[case] json: &str, #[case] expected_num: JsonParseResult<Option<Option<JsonNumber>>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_opt_raw_number_or_end_array() {
+            Ok(o) => assert_eq!(o, expected_num.unwrap()),
+            Err(act_e) => match expected_num {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
         }
     }
 
@@ -1016,6 +1267,28 @@ mod tests {
         let mut r = Cursor::new(json.as_bytes());
         let mut json_reader = JsonReader::new(64, &mut r);
         match json_reader.expect_string() {
+            Ok(n) => assert_eq!(n, expected.unwrap()),
+            Err(act_e) => match expected {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::simple("\"qrs\"", Ok(Some("qrs")))]
+    #[case::null("null", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_string_or_end_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<&str>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_string_or_end_array() {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -1045,6 +1318,29 @@ mod tests {
             }
         }
     }
+
+    #[rstest]
+    #[case::simple("\"rst\"", Ok(Some(Some("rst"))))]
+    #[case::null("null", Ok(Some(None)))]
+    #[case::number("12", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_opt_string_or_end_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<Option<&str>>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_opt_string_or_end_array() {
+            Ok(n) => assert_eq!(n, expected.unwrap()),
+            Err(act_e) => match expected {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
     #[rstest]
     #[case::bool_true("true", Ok(true))]
     #[case::bool_false("false", Ok(false))]
@@ -1060,6 +1356,29 @@ mod tests {
         let mut r = Cursor::new(json.as_bytes());
         let mut json_reader = JsonReader::new(64, &mut r);
         match json_reader.expect_bool() {
+            Ok(n) => assert_eq!(n, expected.unwrap()),
+            Err(act_e) => match expected {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::bool_true("true", Ok(Some(true)))]
+    #[case::bool_false("false", Ok(Some(false)))]
+    #[case::null("null", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::string("\"a\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_bool_or_end_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<bool>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_bool_or_end_array() {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -1092,6 +1411,29 @@ mod tests {
     }
 
     #[rstest]
+    #[case::bool_true("true", Ok(Some(Some(true))))]
+    #[case::bool_false("false", Ok(Some(Some(false))))]
+    #[case::null("null", Ok(Some(None)))]
+    #[case::string("\"x\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_opt_bool_or_end_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<Option<bool>>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_opt_bool_or_end_array() {
+            Ok(n) => assert_eq!(n, expected.unwrap()),
+            Err(act_e) => match expected {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
     #[case::null("null", Err(JsonParseError::Parse("", Location::start())))]
     #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
     #[case::string("\"a\"", Err(JsonParseError::Parse("", Location::start())))]
@@ -1105,6 +1447,28 @@ mod tests {
         let mut r = Cursor::new(json.as_bytes());
         let mut json_reader = JsonReader::new(64, &mut r);
         match json_reader.expect_start_object() {
+            Ok(n) => assert_eq!(n, expected.unwrap()),
+            Err(act_e) => match expected {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::null("null", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::string("\"a\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Ok(Some(())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_start_object_or_end_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<()>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_start_object_or_end_array() {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -1158,6 +1522,28 @@ mod tests {
     }
 
     #[rstest]
+    #[case::bool("false", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::null("null", Ok(Some(None)))]
+    #[case::string("\"x\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Ok(Some(Some(()))))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_opt_start_object_or_end_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<Option<()>>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_opt_start_object_or_end_array() {
+            Ok(n) => assert_eq!(n, expected.unwrap()),
+            Err(act_e) => match expected {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
     #[case::null("null", Err(JsonParseError::Parse("", Location::start())))]
     #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
     #[case::string("\"a\"", Err(JsonParseError::Parse("", Location::start())))]
@@ -1171,6 +1557,28 @@ mod tests {
         let mut r = Cursor::new(json.as_bytes());
         let mut json_reader = JsonReader::new(64, &mut r);
         match json_reader.expect_start_array() {
+            Ok(n) => assert_eq!(n, expected.unwrap()),
+            Err(act_e) => match expected {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::null("null", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::bool("true", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::string("\"a\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Ok(Some(())))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_start_array_or_end_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<()>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_start_array_or_end_array() {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
@@ -1215,6 +1623,28 @@ mod tests {
         let mut r = Cursor::new(json.as_bytes());
         let mut json_reader = JsonReader::new(64, &mut r);
         match json_reader.expect_opt_start_array() {
+            Ok(n) => assert_eq!(n, expected.unwrap()),
+            Err(act_e) => match expected {
+                Ok(_) => panic!("unexpected error: {}", act_e),
+                Err(exp_e) => assert_is_similar_error(&act_e, &exp_e),
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::bool("false", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::null("null", Ok(Some(None)))]
+    #[case::string("\"x\"", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::number("12", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::key("\"abc\": ", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_object("{", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::end_object("}", Err(JsonParseError::Parse("", Location::start())))]
+    #[case::start_array("[", Ok(Some(Some(()))))]
+    #[case::end_array("]", Ok(None))]
+    fn test_expect_opt_start_array_or_end_array(#[case] json: &str, #[case] expected: JsonParseResult<Option<Option<()>>, io::Error>) {
+        let mut r = Cursor::new(json.as_bytes());
+        let mut json_reader = JsonReader::new(64, &mut r);
+        match json_reader.expect_opt_start_array_or_end_array() {
             Ok(n) => assert_eq!(n, expected.unwrap()),
             Err(act_e) => match expected {
                 Ok(_) => panic!("unexpected error: {}", act_e),
