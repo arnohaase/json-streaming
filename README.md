@@ -14,6 +14,8 @@ special use cases:
 
 All APIs exist in both blocking and non-blocking variants.
 
+For a change history and versions, see the [ChangeLog](ChangeLog.md).
+
 ## Getting started
 
 Here's a simple example of how to write JSON using the library:

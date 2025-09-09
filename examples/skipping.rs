@@ -114,7 +114,7 @@ fn skip_unexpected_keys_in_array() -> JsonParseResult<(), io::Error> {
             JsonReadToken::EndObject |
             JsonReadToken::Key(_) |
             JsonReadToken::EndOfStream => {
-                return Err(JsonParseError::UnexpectedToken(JsonReadToken::EndOfStream.kind(), json_reader.location()));
+                return Err(JsonParseError::Parse(JsonReadToken::EndOfStream.kind(), json_reader.location()));
             }
         }
     }

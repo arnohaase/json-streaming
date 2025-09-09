@@ -104,7 +104,6 @@ pub enum JsonParseError<E: Error> {
     Io(E),
     Utf8(Utf8Error),
     Parse(&'static str, Location),
-    UnexpectedToken(&'static str, Location),
     BufferOverflow(Location),
 }
 impl <E: Error> Display for JsonParseError<E> {
@@ -113,7 +112,6 @@ impl <E: Error> Display for JsonParseError<E> {
             JsonParseError::Io(err) => write!(f, "I/O error: {}", err),
             JsonParseError::Utf8(err) => write!(f, "Invalid UTF8: {}", err),
             JsonParseError::Parse(msg, location) => write!(f, "parse error: {} @ {}", msg, location),
-            JsonParseError::UnexpectedToken(kind, location) => write!(f, "unexpected token '{}' @ {}", kind, location),
             JsonParseError::BufferOverflow(location) => write!(f, "buffer overflow @ {}", location),
         }
     }
