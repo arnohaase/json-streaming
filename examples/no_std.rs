@@ -118,21 +118,21 @@ fn main() -> Result<(), NoError> {
 /// The actual parsing code is the same as with a standard library. It is extracted into a separate
 ///  function to simplify error handling.
 fn do_read(json_reader: &mut JsonReader<&mut [u8;64], SliceReadBuffer>) -> JsonParseResult<(), NoError> {
-    json_reader.expect_next_start_object()?;
+    json_reader.expect_start_object()?;
     loop {
-        match json_reader.expect_next_key()? {
+        match json_reader.expect_key()? {
             Some("name") => {
                 // note that reading a string is alloc free: internally, the string is accumulated
-                //  in the read buffer, and the 'expect_next_string' function returns a string
+                //  in the read buffer, and the 'expect_string' function returns a string
                 //  slice pointing into that
-                let _name = json_reader.expect_next_string()?;
+                let _name = json_reader.expect_string()?;
                 // do something with the name
             }
             Some("age") => {
                 // note that reading a number is alloc free: internally, the number literal is
                 //  accumulated in the read buffer, and then it is parsed based on a slice into
                 //  that
-                let _age = json_reader.expect_next_number::<u32>()?;
+                let _age = json_reader.expect_number::<u32>()?;
                 // do something with the age
             }
             Some(_) => {

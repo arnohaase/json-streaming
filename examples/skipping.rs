@@ -36,13 +36,13 @@ fn skip_unexpected_keys_in_object() -> JsonParseResult<(), io::Error> {
     let mut json_reader = JsonReader::new(1024, &mut r);
 
     // start of object
-    json_reader.expect_next_start_object()?;
+    json_reader.expect_start_object()?;
     loop {
-        // and call 'expect_next_key()' in a loop as is typical for reading JSON objects
-        match json_reader.expect_next_key()? {
+        // and call 'expect_key()' in a loop as is typical for reading JSON objects
+        match json_reader.expect_key()? {
             // known keys
-            Some("a") => println!("a: {}", json_reader.expect_next_bool()?),
-            Some("b") => println!("b: {}", json_reader.expect_next_number::<u32>()?),
+            Some("a") => println!("a: {}", json_reader.expect_bool()?),
+            Some("b") => println!("b: {}", json_reader.expect_number::<u32>()?),
             Some(other) => {
                 println!("unexpected key {}, skipping", other);
                 // An unexpected key: We want to skip it, so we need to consume the corresponding
@@ -79,7 +79,7 @@ fn skip_unexpected_keys_in_array() -> JsonParseResult<(), io::Error> {
     let mut json_reader = JsonReader::new(1024, &mut r);
 
     // start of array
-    json_reader.expect_next_start_array()?;
+    json_reader.expect_start_array()?;
     loop {
         // We call the generic 'next()' function to handle all kinds of elements
         match json_reader.next()? {

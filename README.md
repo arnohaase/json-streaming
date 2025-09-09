@@ -43,11 +43,11 @@ use json_streaming::blocking::*;
 fn read_something(r: &mut impl io::Read) -> JsonParseResult<(), io::Error> {
     let mut json_reader = JsonReader::new(1024, r);
 
-    json_reader.expect_next_start_object()?;
+    json_reader.expect_start_object()?;
     loop {
-        match json_reader.expect_next_key()? {
-            Some("a") => println!("a: {}", json_reader.expect_next_string()?),
-            Some("b") => println!("b: {}", json_reader.expect_next_string()?),
+        match json_reader.expect_key()? {
+            Some("a") => println!("a: {}", json_reader.expect_string()?),
+            Some("b") => println!("b: {}", json_reader.expect_string()?),
             Some(_other) => {
                 return Err(JsonParseError::Parse("unexpected key parsing 'person'", json_reader.location()));
             },

@@ -88,20 +88,20 @@ where
     // The JsonReader is pull-based, i.e. client code calls one of its 'next' functions to read
     //  the next token.
     // Often client code 'knows' what kind of token 'should' come next - in this example, we
-    //  expect a JSON object at the top level. So we call 'expect_next_start_object()' which
+    //  expect a JSON object at the top level. So we call 'expect_start_object()' which
     //  reads the next token and fails unless that token actually is the start of a JSON object.
-    json_reader.expect_next_start_object().await?;
+    json_reader.expect_start_object().await?;
 
     loop {
         // Now that we are 'inside' the object, we iterate until the object ends.
-        // 'expect_next_key()' exists for this purpose: It returns Some(key) if the next token
+        // 'expect_key()' exists for this purpose: It returns Some(key) if the next token
         //  is a key, and None if it reached the end of the object
-        match json_reader.expect_next_key().await? {
+        match json_reader.expect_key().await? {
             // We can match on the name of the key - this makes our JSON handling independent
             //  of the order in which the keys occur
             Some("name") => {
                 // for the 'name' element, we expect a string value
-                let name = json_reader.expect_next_string().await?;
+                let name = json_reader.expect_string().await?;
                 println!("name: {}", name);
             },
             Some("age") => {
@@ -109,7 +109,7 @@ where
                 // Note that we need to specify the actual type so the JsonReader
                 //  can parse the JSON number literal to a u32 (or fail if the number is a
                 //  floating point, negative number or too big)
-                let age: u32 = json_reader.expect_next_number().await?;
+                let age: u32 = json_reader.expect_number().await?;
                 println!("age: {}", age);
             },
             Some("favorite-colors") => {
@@ -141,7 +141,7 @@ where
     R: AsyncRead + Send + Unpin
 {
     // The next token must be the start of a JSON array
-    r.expect_next_start_array().await?;
+    r.expect_start_array().await?;
     loop {
         // Calling 'next()' returns the next token, making no assumptions about its type. We call
         //  it repeatedly until we reach the end of the array

@@ -31,8 +31,8 @@ fn read(json_lines: String) -> JsonParseResult<(), io::Error> {
         println!("start object");
         loop {
             match json_reader.next()? {
-                JsonReadToken::Key("a") => println!("  a={:?}", json_reader.expect_next_string()?),
-                JsonReadToken::Key("b") => println!("  b={:?}", json_reader.expect_next_number::<u32>()?),
+                JsonReadToken::Key("a") => println!("  a={:?}", json_reader.expect_string()?),
+                JsonReadToken::Key("b") => println!("  b={:?}", json_reader.expect_number::<u32>()?),
                 JsonReadToken::EndObject => break,
                 _ => return Err(JsonParseError::Parse(JsonReadToken::EndObject.kind(), json_reader.location())),
             }
