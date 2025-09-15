@@ -76,9 +76,6 @@ impl<'a, R: NonBlockingRead> JsonReader<'a, Vec<u8>, R> {
     }
 }
 
-//TODO Rust Doc
-
-
 impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
     /// Create a [JsonReader] that uses an externally provided buffer as its read buffer.
     pub fn new_with_provided_buffer(buf: B, reader: &'a mut R, lenient_comma_handling: bool) -> Self {
