@@ -142,25 +142,14 @@ where
 {
     // The next token must be the start of a JSON array
     r.expect_start_array().await?;
-    loop {
-        // Calling 'next()' returns the next token, making no assumptions about its type. We call
-        //  it repeatedly until we reach the end of the array
-        match r.next().await? {
-            JsonReadToken::StringLiteral(color) => {
-                // We have a string -> this is what we expect
-                println!("  favorite color: {}", color);
-            }
-            JsonReadToken::EndArray => {
-                // end of the array: we're done
-                break;
-            },
-            _other => {
-                // This means there is non-string elements in the array. For this example,
-                //  we decide to fail. For details on how to skip data safely, see the 'skipping'
-                //  example.
-                return Err(JsonParseError::Parse("non-strings in 'favorite-colors'", r.location()));
-            },
-        }
+
+    // The array should contain only strings, so we can consume it using 'expect_string_or_end_array':
+    //  Some(color) represents another string element in the array, and None represents the end of
+    //  the array
+    while let Some(color) = r.expect_string_or_end_array().await? {
+        // We have a string -> this is what we expect
+        println!("  favorite color: {}", color);
     }
+
     Ok(())
 }
