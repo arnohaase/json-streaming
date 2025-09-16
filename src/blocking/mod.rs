@@ -1,10 +1,3 @@
-//! TODO move this to the structs
-//! When [JsonObject] or [JsonArray] instances go out of scope, they write their respective closing
-//!  brackets automatically (although they also have optional `end()` functions). This is
-//!  convenient, but it means there is no explicit function call for returning potential
-//!  `io::Error`s. These errors are stored internally so they don't get lost, and the [JsonWriter]
-//!  has a `flush()` function that returns such an error if it exists. The idiom is the same that
-//!  e.g. the standard library's `BufRead` uses.
 
 pub(crate) mod json_writer;
 pub(crate) mod object;
