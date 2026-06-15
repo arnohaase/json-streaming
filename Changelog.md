@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 1.0.4
+## Version 1.0.5
 * support writing pre-rendered JSON snippets
 
 ## Version 1.0.3
