@@ -43,6 +43,16 @@ impl<'a, 'b, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonObject<
         self.writer.write_format_after_key().await
     }
 
+    /// Write a pre-serialized JSON snippet as a value with a given key.
+    ///
+    /// NB: This method does *not* perform any checks on the value, assuming it to be a valid JSON
+    ///  value.
+    /// NB: This method does not apply formatting rules to the JSON snippet, but writes it 'as-is'.
+    pub async fn unchecked_write_raw_value(&mut self, key: &str, value_json: &str) -> Result<(), W::Error> {
+        self.write_key(key).await?;
+        self.writer.write_bytes(value_json.as_bytes()).await
+    }
+
     /// Write a key/value pair with element type 'string', escaping the provided string value.
     pub async fn write_string_value(&mut self, key: &str, value: &str) -> Result<(), W::Error> {
         self.write_key(key).await?;
@@ -151,6 +161,7 @@ pub mod tests {
     pub enum ObjectCommand {
         Null(&'static str),
         Bool(&'static str, bool),
+        Raw(&'static str, &'static str),
         String(&'static str, &'static str),
         U8(&'static str, u8),
         I8(&'static str, i8),
@@ -174,6 +185,7 @@ pub mod tests {
             match self {
                 ObjectCommand::Null(key) => obj.write_null_value(key).await.unwrap(),
                 ObjectCommand::Bool(key, b) => obj.write_bool_value(key, *b).await.unwrap(),
+                ObjectCommand::Raw(key, b) => obj.unchecked_write_raw_value(key, *b).await.unwrap(),
                 ObjectCommand::String(key, s) => obj.write_string_value(key, s).await.unwrap(),
                 ObjectCommand::U8(key, n) => obj.write_u8_value(key, *n).await.unwrap(),
                 ObjectCommand::I8(key, n) => obj.write_i8_value(key, *n).await.unwrap(),
@@ -239,11 +251,11 @@ pub mod tests {
         Ok(())
     }
 
-
     #[rstest]
     #[case::null(ObjectCommand::Null("a"), "null")]
     #[case::bool_true(ObjectCommand::Bool("a", true), "true")]
     #[case::bool_false(ObjectCommand::Bool("a", false), "false")]
+    #[case::raw(ObjectCommand::Raw("a", "x y z"), "x y z")]
     #[case::string(ObjectCommand::String("a", "asdf"), r#""asdf""#)]
     #[case::string_escaped(ObjectCommand::String("a", "\r\n"), r#""\r\n""#)]
     #[case::u8(ObjectCommand::U8("a", 2u8), "2")]

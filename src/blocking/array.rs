@@ -45,6 +45,16 @@ impl<'a, 'b, W: BlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'a, 
         Ok(())
     }
 
+    /// Write a pre-serialized JSON snippet as a value.
+    ///
+    /// NB: This method does *not* perform any checks on the value, assuming it to be a valid JSON
+    ///  value.
+    /// NB: This method does not apply formatting rules to the JSON snippet, but writes it 'as-is'.
+    pub fn unchecked_write_raw_value(&mut self, value_json: &str) -> Result<(), W::Error> {
+        self.handle_initial()?;
+        self.writer.write_bytes(value_json.as_bytes())
+    }
+
     /// Write an element of type 'string', escaping the provided string value.
     pub fn write_string_value(&mut self, value: &str) -> Result<(), W::Error> {
         self.handle_initial()?;
@@ -194,6 +204,7 @@ mod tests {
     #[case::null(Box::new(|w: &mut AS| w.write_null_value()), "null")]
     #[case::bool_true(Box::new(|w: &mut AS| w.write_bool_value(true)), "true")]
     #[case::bool_false(Box::new(|w: &mut AS| w.write_bool_value(false)), "false")]
+    #[case::raw(Box::new(|w: &mut AS| w.unchecked_write_raw_value("x y z")), "x y z")]
     #[case::string(Box::new(|w: &mut AS| w.write_string_value("asdf")), r#""asdf""#)]
     #[case::string_escaped(Box::new(|w: &mut AS| w.write_string_value("\r\n")), r#""\r\n""#)]
     #[case::u8(Box::new(|w: &mut AS| w.write_u8_value(2u8)), "2")]

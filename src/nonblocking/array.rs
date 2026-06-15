@@ -45,6 +45,16 @@ impl<'a, 'b, W: NonBlockingWrite, F: JsonFormatter, FF: FloatFormat> JsonArray<'
         Ok(())
     }
 
+    /// Write a pre-serialized JSON snippet as a value.
+    ///
+    /// NB: This method does *not* perform any checks on the value, assuming it to be a valid JSON
+    ///  value.
+    /// NB: This method does not apply formatting rules to the JSON snippet, but writes it 'as-is'.
+    pub async fn unchecked_write_raw_value(&mut self, value_json: &str) -> Result<(), W::Error> {
+        self.handle_initial().await?;
+        self.writer.write_bytes(value_json.as_bytes()).await
+    }
+
     /// Write an element of type 'string', escaping the provided string value.
     pub async fn write_string_value(&mut self, value: &str) -> Result<(), W::Error> {
         self.handle_initial().await?;
@@ -155,6 +165,7 @@ pub mod tests {
     pub enum ArrayCommand {
         Null,
         Bool(bool),
+        Raw(&'static str),
         String(&'static str),
         U8(u8),
         I8(i8),
@@ -178,6 +189,7 @@ pub mod tests {
             match self {
                 ArrayCommand::Null => arr.write_null_value().await.unwrap(),
                 ArrayCommand::Bool(b) => arr.write_bool_value(*b).await.unwrap(),
+                ArrayCommand::Raw(s) => arr.unchecked_write_raw_value(s).await.unwrap(),
                 ArrayCommand::String(s) => arr.write_string_value(s).await.unwrap(),
                 ArrayCommand::U8(n) => arr.write_u8_value(*n).await.unwrap(),
                 ArrayCommand::I8(n) => arr.write_i8_value(*n).await.unwrap(),
@@ -245,6 +257,7 @@ pub mod tests {
     #[case::null(ArrayCommand::Null, "null")]
     #[case::bool_true(ArrayCommand::Bool(true), "true")]
     #[case::bool_false(ArrayCommand::Bool(false), "false")]
+    #[case::raw(ArrayCommand::Raw("x y z"), "x y z")]
     #[case::string(ArrayCommand::String("asdf"), r#""asdf""#)]
     #[case::string_escaped(ArrayCommand::String("\r\n"), r#""\r\n""#)]
     #[case::u8(ArrayCommand::U8(2), "2")]
