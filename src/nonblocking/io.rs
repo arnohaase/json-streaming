@@ -1,3 +1,4 @@
+#[cfg(feature = "std")]
 use async_trait::async_trait;
 use core::error::Error;
 
@@ -11,7 +12,7 @@ use core::error::Error;
 /// Note that json-streaming writes data to a [NonBlockingWrite] in many small chunks without any
 ///  I/O buffering. It is the client's responsibility to add buffering for improved performance
 ///  where desired.
-#[async_trait]
+#[cfg_attr(feature = "std", async_trait)]
 pub trait NonBlockingWrite {
     type Error: Error;
 
@@ -42,7 +43,7 @@ impl <W: tokio::io::AsyncWrite + Unpin + Send> NonBlockingWrite for W {
 }
 
 
-#[async_trait]
+#[cfg_attr(feature = "std", async_trait)]
 /// [NonBlockingRead] is the library's abstraction for non-blocking read I/O.
 ///
 /// It is similar to `tokio:io::AsyncRead`, and there is a blanket implementation of

@@ -61,6 +61,7 @@ pub struct JsonReader<'a, B: AsMut<[u8]>, R: NonBlockingRead> {
     reader: &'a mut R,
 }
 
+#[cfg(feature = "std")]
 impl<'a, R: NonBlockingRead> JsonReader<'a, Vec<u8>, R> {
     /// Create a [JsonReader], allocating a read buffer of given size on the heap.
     pub fn new(buf_size: usize, reader: &'a mut R) -> Self {
@@ -91,58 +92,61 @@ impl<'a, B: AsMut<[u8]>, R: NonBlockingRead> JsonReader<'a, B, R> {
     /// The function does only limited checks of JSON grammar and basically returns whatever tokens
     ///  it finds.
     pub async fn next(&mut self) -> JsonParseResult<JsonReadToken<'_>, R::Error> {
-        self.consume_whitespace().await?;
+        loop {
+            self.consume_whitespace().await?;
 
-        match self.read_next_byte().await? {
-            None => {
-                Ok(JsonReadToken::EndOfStream)
-            },
-            Some(b',') => {
-                self.inner.on_comma()?;
-                Box::pin(self.next()).await
-            }
-            Some(b'{') => {
-                self.inner.ensure_accept_value()?;
-                self.inner.state = ReaderState::Initial;
-                Ok(JsonReadToken::StartObject)
-            },
-            Some(b'}') => {
-                self.inner.ensure_accept_end_nested()?;
-                self.inner.state = ReaderState::AfterValue;
-                Ok(JsonReadToken::EndObject)
-            },
-            Some(b'[') => {
-                self.inner.ensure_accept_value()?;
-                self.inner.state = ReaderState::Initial;
-                Ok(JsonReadToken::StartArray)
-            },
-            Some(b']') => {
-                self.inner.ensure_accept_end_nested()?;
-                self.inner.state = ReaderState::AfterValue;
-                Ok(JsonReadToken::EndArray)
-            },
-
-            Some(b'n') => {
-                self.inner.state_change_for_value()?;
-                self.consume_null_literal().await
-            },
-            Some(b't') => {
-                self.inner.state_change_for_value()?;
-                self.consume_true_literal().await
-            },
-            Some(b'f') => {
-                self.inner.state_change_for_value()?;
-                self.consume_false_literal().await
-            },
-
-            Some(b'"') => self.parse_after_quote().await, // key or string value based on following ':'
-            Some(b) => {
-                self.inner.state_change_for_value()?;
-                match b {
-                    b'-' | b'0'..=b'9' => self.parse_number_literal(b).await,
-                    _ => self.parse_err("invalid JSON literal")
+            let res = match self.read_next_byte().await? {
+                None => {
+                    Ok(JsonReadToken::EndOfStream)
+                },
+                Some(b',') => {
+                    self.inner.on_comma()?;
+                    continue;
                 }
-            },
+                Some(b'{') => {
+                    self.inner.ensure_accept_value()?;
+                    self.inner.state = ReaderState::Initial;
+                    Ok(JsonReadToken::StartObject)
+                },
+                Some(b'}') => {
+                    self.inner.ensure_accept_end_nested()?;
+                    self.inner.state = ReaderState::AfterValue;
+                    Ok(JsonReadToken::EndObject)
+                },
+                Some(b'[') => {
+                    self.inner.ensure_accept_value()?;
+                    self.inner.state = ReaderState::Initial;
+                    Ok(JsonReadToken::StartArray)
+                },
+                Some(b']') => {
+                    self.inner.ensure_accept_end_nested()?;
+                    self.inner.state = ReaderState::AfterValue;
+                    Ok(JsonReadToken::EndArray)
+                },
+
+                Some(b'n') => {
+                    self.inner.state_change_for_value()?;
+                    self.consume_null_literal().await
+                },
+                Some(b't') => {
+                    self.inner.state_change_for_value()?;
+                    self.consume_true_literal().await
+                },
+                Some(b'f') => {
+                    self.inner.state_change_for_value()?;
+                    self.consume_false_literal().await
+                },
+
+                Some(b'"') => self.parse_after_quote().await, // key or string value based on following ':'
+                Some(b) => {
+                    self.inner.state_change_for_value()?;
+                    match b {
+                        b'-' | b'0'..=b'9' => self.parse_number_literal(b).await,
+                        _ => self.parse_err("invalid JSON literal")
+                    }
+                },
+            };
+            break res;
         }
     }
 
@@ -1835,3 +1839,4 @@ mod tests {
         Ok(())
     }
 }
+
